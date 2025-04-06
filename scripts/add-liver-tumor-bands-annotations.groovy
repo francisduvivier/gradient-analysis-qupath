@@ -20,17 +20,22 @@ def main() {
     for (Tuple<PathObject> tissueAndLine : tissuesWithLine) {
         def (tissue, tumorLine) = tissueAndLine
         def (liver, tumor) = getSeparatedTissuePoints(tissue, tumorLine)
+
         addAnnotation(liver, "liver[$coreIndex]", makeRGB(150, 150, 0))
-        annotateHalfWithExpansions("tumor[$coreIndex]", liver, tumor, 6, 100)
+        def biggestLiverExpansion = annotateHalfWithExpansions("tumor[$coreIndex]", liver, tumor, 6, 100)
+        addAnnotation(createCentralROI(tumor, biggestLiverExpansion), "centralTumor [$coreIndex]", makeRGB(0, 150, 0))
+
         addAnnotation(liver, "tumor[$coreIndex]", makeRGB(150, 150, 0))
-        annotateHalfWithExpansions("liver[$coreIndex]", tumor, liver, 4, 100)
+        def biggestTumorExpansion = annotateHalfWithExpansions("liver[$coreIndex]", tumor, liver, 4, 100)
+        addAnnotation(createCentralROI(liver, biggestTumorExpansion), "centralLiver [$coreIndex]", makeRGB(0, 150, 0))
+
         coreIndex++
     }
 
 }
 
 
-void annotateHalfWithExpansions(String name, PolygonROI startPolygon, PolygonROI interSectingPolygon, int amount, int microns) {
+Geometry annotateHalfWithExpansions(String name, PolygonROI startPolygon, PolygonROI interSectingPolygon, int amount, int microns) {
     double distance = getDistance(microns)
     def prevExpansion = startPolygon.geometry
     for (int i = 1; i <= amount; i++) {
@@ -42,6 +47,7 @@ void annotateHalfWithExpansions(String name, PolygonROI startPolygon, PolygonROI
         def bandColor = makeRGB(20 * i, 40 * i, 200 - 30 * i)
         addAnnotation(getROIForGeometry(intersection, startPolygon.imagePlane), "$name [${i * microns} micrometer]", bandColor)
     }
+    return prevExpansion
 }
 
 List<Tuple<PathObject>> findTissueWithTumorLines() {
@@ -160,4 +166,8 @@ double getDistance(double microns) {
 boolean isTumor(PolygonROI polygonROI) {
     Collection<PathObject> annotations = getAnnotationObjects()
     return annotations.find { it.classifications.contains('Tumor') && polygonROI.geometry.intersects(it.ROI.geometry)} != null
+}
+
+ROI createCentralROI(PolygonROI startRoi, Geometry biggestExpansion) {
+return ROIs.createPolygonROI(getGeometryPoints(startRoi.geometry.difference(biggestExpansion)), startRoi.imagePlane)
 }
