@@ -19,27 +19,28 @@ def main() {
     Integer coreIndex = 0
     for (Tuple<PathObject> tissueAndLine : tissuesWithLine) {
         def (tissue, tumorLine) = tissueAndLine
-        def halves = getSeparatedTissuePoints(tissue, tumorLine)
-        annotateHalfWithExpansions("liver[$coreIndex]", halves[1], halves[0], 4, 100)
-        annotateHalfWithExpansions("tumor[$coreIndex]", halves[0], halves[1], 6, 100)
+        def (liver, tumor) = getSeparatedTissuePoints(tissue, tumorLine)
+        addAnnotation(liver, "liver[$coreIndex]", makeRGB(150, 150, 0))
+        annotateHalfWithExpansions("tumor[$coreIndex]", liver, tumor, 6, 100)
+        addAnnotation(liver, "tumor[$coreIndex]", makeRGB(150, 150, 0))
+        annotateHalfWithExpansions("liver[$coreIndex]", tumor, liver, 4, 100)
         coreIndex++
     }
 
 }
 
 
-void annotateHalfWithExpansions(String name, PolygonROI polygonROI, PolygonROI otherHalf, int amount, int microns) {
-    addAnnotation(polygonROI, name, makeRGB(150, 150, 0))
+void annotateHalfWithExpansions(String name, PolygonROI startPolygon, PolygonROI interSectingPolygon, int amount, int microns) {
     double distance = getDistance(microns)
-    def prevExpansion = polygonROI.geometry
+    def prevExpansion = startPolygon.geometry
     for (int i = 1; i <= amount; i++) {
-        def expansion = polygonROI.geometry.buffer(i * distance)
+        def expansion = startPolygon.geometry.buffer(i * distance)
         def expansionBand = expansion.difference(prevExpansion)
         prevExpansion = expansion
-        def intersection = expansionBand.intersection(otherHalf.geometry)
+        def intersection = expansionBand.intersection(interSectingPolygon.geometry)
 
         def bandColor = makeRGB(20 * i, 40 * i, 200 - 30 * i)
-        addAnnotation(getROIForGeometry(intersection, polygonROI.imagePlane), "$name [${i * microns} micrometer]", bandColor)
+        addAnnotation(getROIForGeometry(intersection, startPolygon.imagePlane), "$name [${i * microns} micrometer]", bandColor)
     }
 }
 
@@ -62,7 +63,7 @@ Tuple<PathObject> getTissueWithLine(PathObject candidate) {
     print "Found tumor line annotation: ${tumorLine?.name}"
 
     if (tissue == null || tumorLine == null) {
-        String missing = []
+        String[] missing = []
         if (tissue == null) missing.add("a closed tissue annotation")
         if (tumorLine == null) missing.add("a tumor line annotation")
         throw new RuntimeException("Missing required annotations: need " + missing.join(" and ") + ".")
@@ -103,7 +104,12 @@ Tuple<PolygonROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTu
 
     def halfInOuterPartOfArray = tissuePoints.subList(closestPointEndIndex, tissuePoints.size()) + tissuePoints.subList(0, closestPointStartIndex + 1)
 
-    return [halfInInnerPartOfArray, halfInOuterPartOfArray].collect { combineLinesToRoi(tumorLinePoints, it, plane) }
+
+    def halves = [halfInInnerPartOfArray, halfInOuterPartOfArray].collect { combineLinesToRoi(tumorLinePoints, it, plane) }
+    if (isTumor(halves[0])) {
+        halves = halves.reverse()
+    }
+    return halves
 }
 
 
@@ -148,4 +154,9 @@ double getDistance(double microns) {
         throw new RuntimeException("We need the pixel size information here!")
     }
     return microns / cal.getAveragedPixelSizeMicrons()
+}
+
+boolean isTumor(PolygonROI polygonROI) {
+    Collection<PathObject> annotations = getAnnotationObjects()
+    return annotations.find { it.classifications.contains('Tumor') && polygonROI.geometry.intersects(it.ROI.geometry)} != null
 }
