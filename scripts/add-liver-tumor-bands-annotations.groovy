@@ -9,52 +9,57 @@ import qupath.lib.roi.ROIs
 
 import static qupath.lib.gui.scripting.QPEx.*
 
-// For getAnnotationObjects(), addObject()
+print('START: main')
+main()
+print('END: main')
 
-def annotations = getAnnotationObjects()
+def main() {
 
-// Find required annotations
-def tissue = annotations.find { it.getROI().isArea() && it.getName() == 'mTissue' }
-def tumorLine = annotations.find { it.getROI().isLine() && it.getROI().geometry.intersects(tissue.getROI().geometry)}
+    def annotations = getAnnotationObjects()
 
-if (tissue == null || tumorLine == null) {
-    String missing = []
-    if (tissue == null) missing.add("a closed tissue annotation")
-    if (tumorLine == null) missing.add("a tumor line annotation")
-    print "Missing required annotations: need " + missing.join(" and ") + "."
-    return
-}
+    // Find required annotations
+    def tissue = annotations.find { it.getROI().isArea() && it.getName() == 'mTissue' }
+    print "Found tissue annotation: ${tissue?.name}"
+    def tumorLine = annotations.find { it.getROI().isLine() && it.getROI().geometry.intersects(tissue.getROI().geometry) }
+    print "Found tumor line annotation: ${tumorLine?.name}"
 
-print "Found tissue annotation: ${tissue.getName()}"
-print "Found tumor line annotation: ${tumorLine.getName()}"
+    if (tissue == null || tumorLine == null) {
+        String missing = []
+        if (tissue == null) missing.add("a closed tissue annotation")
+        if (tumorLine == null) missing.add("a tumor line annotation")
+        print "Missing required annotations: need " + missing.join(" and ") + "."
+        return
+    }
+
 
 // Get the tumor line points - corrected method call
-def tumorLineROI = tumorLine.getROI()
-def tumorPoints = tumorLineROI.getAllPoints()  // Correct method name for PolylineROI
+    def tumorLineROI = tumorLine.getROI()
+    def tumorPoints = tumorLineROI.getAllPoints()  // Correct method name for PolylineROI
 
 // Validate we can create a polygon
-if (tumorPoints.size() < 3) {
-    print "Cannot create area - tumor line needs at least 3 points (has ${tumorPoints.size()})"
-    return
+    if (tumorPoints.size() < 3) {
+        print "Cannot create area - tumor line needs at least 3 points (has ${tumorPoints.size()})"
+        return
+    }
+
+    try {
+        def halves = getSeparatedTissuePoints(tissue, tumorLine)
+        addHalfTissueAnnotation(halves[0], 'half[0]')
+        addHalfTissueAnnotation(halves[1], 'half[1]')
+
+    } catch (Exception e) {
+        print "Could not create tumor area: " + e.getMessage()
+    }
 }
 
-try {
-    def halves = getSeparatedTissuePoints(tissue, tumorLine)
-    addHalfTissueAnnotation(halves[0], 'half[0]')
-    addHalfTissueAnnotation(halves[1], 'half[1]')
-
-} catch (Exception e) {
-    print "Could not create tumor area: " + e.getMessage()
-}
-
-private void addHalfTissueAnnotation(PolygonROI halfTissueROI, String name) {
+static void addHalfTissueAnnotation(PolygonROI halfTissueROI, String name) {
     def halfTissue = PathObjects.createAnnotationObject(halfTissueROI)
     halfTissue.setName(name)
     addObject(halfTissue)
     print "Successfully added halfTissue [$name] boundary annotation"
 }
 
-Tuple<PolygonROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTumorLine) {
+static Tuple<PolygonROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTumorLine) {
     def plane = tissue.getROI().getImagePlane()
 
     Geometry interSection = roughTumorLine.getROI().getGeometry().intersection(tissue.getROI().getGeometry())
@@ -67,10 +72,10 @@ Tuple<PolygonROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTu
     print "closestToEndOfTumorIndex: " + closestToEndOfTumorIndex
     def closestPointStartIndex = (int) Math.min(closestToStartOfTumorIndex, closestToEndOfTumorIndex)
     def closestPointEndIndex = (int) Math.max(closestToStartOfTumorIndex, closestToEndOfTumorIndex)
-    List<Point2> halfInInnerPartOfArray = tissuePoints.subList(closestPointStartIndex, closestPointEndIndex+1)
+    List<Point2> halfInInnerPartOfArray = tissuePoints.subList(closestPointStartIndex, closestPointEndIndex + 1)
     print "topTissuePoints: " + halfInInnerPartOfArray.size()
 
-    def halfInOuterPartOfArray = tissuePoints.subList(closestPointEndIndex, tissuePoints.size()) + tissuePoints.subList(0, closestPointStartIndex+1)
+    def halfInOuterPartOfArray = tissuePoints.subList(closestPointEndIndex, tissuePoints.size()) + tissuePoints.subList(0, closestPointStartIndex + 1)
 
     return [halfInInnerPartOfArray, halfInOuterPartOfArray].collect { combineLinesToRoi(tumorLinePoints, it, plane) }
 }
