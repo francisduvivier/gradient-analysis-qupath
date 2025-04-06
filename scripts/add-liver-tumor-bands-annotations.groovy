@@ -17,8 +17,24 @@ print('END: main')
 def main() {
     def (PathObject tissue, tumorLine) = findTissueWithTumorLine()
     def halves = getSeparatedTissuePoints(tissue, tumorLine)
-    annotateHalfWithExpansions('liver', halves[0], halves[1], 3, 100)
-    annotateHalfWithExpansions('tumor', halves[1], halves[0], 2, 50)
+    annotateHalfWithExpansions('liver', halves[1], halves[0], 2, 50)
+    annotateHalfWithExpansions('tumor', halves[0], halves[1], 3, 100)
+}
+
+
+void annotateHalfWithExpansions(String name, PolygonROI polygonROI, PolygonROI otherHalf, int amount, int microns) {
+    addAnnotation(polygonROI, name, makeRGB(150, 150, 0))
+    double distance = getDistance(microns)
+    def prevExpansion = polygonROI.geometry
+    for (int i = 1; i <= amount; i++) {
+        def expansion = polygonROI.geometry.buffer(i * distance)
+        def expansionBand = expansion.difference(prevExpansion)
+        prevExpansion = expansion
+        def intersection = expansionBand.intersection(otherHalf.geometry)
+
+        def bandColor = makeRGB(20 * i, 40 * i, 200 - 30 * i)
+        addAnnotation(getROIForGeometry(intersection, polygonROI.imagePlane), "$name [${i * microns} micrometer]", bandColor)
+    }
 }
 
 Tuple<PathObject> findTissueWithTumorLine() {
@@ -39,11 +55,20 @@ Tuple<PathObject> findTissueWithTumorLine() {
     [tissue, tumorLine]
 }
 
-void addAnnotation(ROI roi, String name) {
+
+PathObject addAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255, 0)) {
     def halfTissue = PathObjects.createAnnotationObject(roi)
+    halfTissue.setColor(color)
     halfTissue.setName(name)
+    Collection<PathObject> annotations = getAnnotationObjects()
+    def existing =  annotations.find {it.name == name}
+    if(existing != null) {
+        print "Removing existing annotation [$name]"
+        removeObject(existing, false)
+    }
     addObject(halfTissue)
     print "Successfully added ROI [$name] annotation"
+    return halfTissue
 }
 
 Tuple<PolygonROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTumorLine) {
@@ -90,19 +115,6 @@ PolygonROI combineLinesToRoi(List<Point2> firstPoints, List<Point2> lastPoints, 
     return ROIs.createPolygonROI(firstPoints + lastPoints, plane)
 }
 
-void annotateHalfWithExpansions(String name, PolygonROI polygonROI, PolygonROI otherHalf, int amount, int microns) {
-    addAnnotation(polygonROI, name)
-
-    double distance = getDistance(microns)
-    def prevExpansion = polygonROI.geometry
-    for (int i = 1; i <= amount; i++) {
-        def expansion = polygonROI.geometry.buffer(i * distance)
-        def expansionBand = expansion.difference(prevExpansion)
-        prevExpansion = expansion
-        def intersection = expansionBand.intersection(otherHalf.geometry)
-        addAnnotation(getROIForGeometry(intersection, polygonROI.imagePlane), "$name [${i * microns} micrometer]")
-    }
-}
 
 ROI getROIForGeometry(Geometry geometry, ImagePlane plane) {
     return ROIs.createPolygonROI(getGeometryPoints(geometry), plane)
