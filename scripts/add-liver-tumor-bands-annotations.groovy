@@ -15,10 +15,16 @@ main()
 print('END: main')
 
 def main() {
-    def (PathObject tissue, tumorLine) = findTissueWithTumorLine()
-    def halves = getSeparatedTissuePoints(tissue, tumorLine)
-    annotateHalfWithExpansions('liver', halves[1], halves[0], 2, 50)
-    annotateHalfWithExpansions('tumor', halves[0], halves[1], 3, 100)
+    List<Tuple<PathObject>> tissuesWithLine = findTissueWithTumorLines()
+    Integer coreIndex = 0
+    for (Tuple<PathObject> tissueAndLine : tissuesWithLine) {
+        def (tissue, tumorLine) = tissueAndLine
+        def halves = getSeparatedTissuePoints(tissue, tumorLine)
+        annotateHalfWithExpansions("liver[$coreIndex]", halves[1], halves[0], 4, 100)
+        annotateHalfWithExpansions("tumor[$coreIndex]", halves[0], halves[1], 6, 100)
+        coreIndex++
+    }
+
 }
 
 
@@ -37,12 +43,21 @@ void annotateHalfWithExpansions(String name, PolygonROI polygonROI, PolygonROI o
     }
 }
 
-Tuple<PathObject> findTissueWithTumorLine() {
+List<Tuple<PathObject>> findTissueWithTumorLines() {
     Collection<PathObject> annotations = getAnnotationObjects()
-
     // Find required annotations
-    def tissue = annotations.find { it.ROI.isArea() && it.getName() == 'zTissue' }
+    return annotations.collect { getTissueWithLine(it) }.findAll { it !== null }
+}
+
+Tuple<PathObject> getTissueWithLine(PathObject candidate) {
+    if (!candidate.ROI.isArea()) {
+        return null
+    }
+
+    def tissue = candidate
     print "Found tissue annotation: ${tissue?.name}"
+
+    Collection<PathObject> annotations = getAnnotationObjects()
     def tumorLine = annotations.find { it.ROI.isLine() && it.ROI.geometry.intersects(tissue.ROI.geometry) }
     print "Found tumor line annotation: ${tumorLine?.name}"
 
@@ -52,17 +67,16 @@ Tuple<PathObject> findTissueWithTumorLine() {
         if (tumorLine == null) missing.add("a tumor line annotation")
         throw new RuntimeException("Missing required annotations: need " + missing.join(" and ") + ".")
     }
-    [tissue, tumorLine]
+    return [tissue, tumorLine]
 }
-
 
 PathObject addAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255, 0)) {
     def halfTissue = PathObjects.createAnnotationObject(roi)
     halfTissue.setColor(color)
     halfTissue.setName(name)
     Collection<PathObject> annotations = getAnnotationObjects()
-    def existing =  annotations.find {it.name == name}
-    if(existing != null) {
+    def existing = annotations.find { it.name == name }
+    if (existing != null) {
         print "Removing existing annotation [$name]"
         removeObject(existing, false)
     }
