@@ -1,11 +1,12 @@
+//file:noinspection GrMethodMayBeStatic
 import org.locationtech.jts.geom.Geometry
 import qupath.lib.geom.Point2
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
 import qupath.lib.regions.ImagePlane
-import qupath.lib.roi.GeometryROI
 import qupath.lib.roi.PolygonROI
 import qupath.lib.roi.ROIs
+import qupath.lib.roi.interfaces.ROI
 
 import static qupath.lib.gui.scripting.QPEx.*
 
@@ -16,17 +17,17 @@ print('END: main')
 def main() {
     def (PathObject tissue, tumorLine) = findTissueWithTumorLine()
     def halves = getSeparatedTissuePoints(tissue, tumorLine)
-    addHalfTissueAnnotation(halves[0], 'half[0]')
-    addHalfTissueAnnotation(halves[1], 'half[1]')
+    addAnnotation(halves[0], 'half[0]')
+    addAnnotation(halves[1], 'half[1]')
 }
 
 Tuple<PathObject> findTissueWithTumorLine() {
     Collection<PathObject> annotations = getAnnotationObjects()
 
     // Find required annotations
-    def tissue = annotations.find { it.getROI().isArea() && it.getName() == 'mTissue' }
+    def tissue = annotations.find { it.ROI.isArea() && it.getName() == 'mTissue' }
     print "Found tissue annotation: ${tissue?.name}"
-    def tumorLine = annotations.find { it.getROI().isLine() && it.getROI().geometry.intersects(tissue.getROI().geometry) }
+    def tumorLine = annotations.find { it.ROI.isLine() && it.ROI.geometry.intersects(tissue.ROI.geometry) }
     print "Found tumor line annotation: ${tumorLine?.name}"
 
     if (tissue == null || tumorLine == null) {
@@ -38,19 +39,19 @@ Tuple<PathObject> findTissueWithTumorLine() {
     [tissue, tumorLine]
 }
 
-static void addHalfTissueAnnotation(PolygonROI halfTissueROI, String name) {
-    def halfTissue = PathObjects.createAnnotationObject(halfTissueROI)
+void addAnnotation(ROI roi, String name) {
+    def halfTissue = PathObjects.createAnnotationObject(roi)
     halfTissue.setName(name)
     addObject(halfTissue)
-    print "Successfully added halfTissue [$name] boundary annotation"
+    print "Successfully added ROI [$name] annotation"
 }
 
-static Tuple<PolygonROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTumorLine) {
-    def plane = tissue.getROI().getImagePlane()
+Tuple<PolygonROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTumorLine) {
+    def plane = tissue.ROI.imagePlane
 
-    Geometry interSection = roughTumorLine.getROI().getGeometry().intersection(tissue.getROI().getGeometry())
-    def tissuePoints = tissue.getROI().getAllPoints()
-    def tumorLinePoints = interSection.getCoordinates().collect { new Point2(it.x, it.y) }
+    Geometry interSection = roughTumorLine.ROI.getGeometry().intersection(tissue.ROI.getGeometry())
+    def tissuePoints = tissue.ROI.getAllPoints()
+    def tumorLinePoints = getGeometryPoints(interSection)
 
     def closestToStartOfTumorIndex = findClosestPointIndex(tumorLinePoints.first, tissuePoints)
     print "closestToStartOfTumorIndex: " + closestToStartOfTumorIndex
@@ -66,7 +67,8 @@ static Tuple<PolygonROI> getSeparatedTissuePoints(PathObject tissue, PathObject 
     return [halfInInnerPartOfArray, halfInOuterPartOfArray].collect { combineLinesToRoi(tumorLinePoints, it, plane) }
 }
 
-static int findClosestPointIndex(Point2 point, List<Point2> otherPoints) {
+
+int findClosestPointIndex(Point2 point, List<Point2> otherPoints) {
     def closestIndex = 0
     def closestDistance = otherPoints[closestIndex].distance(point)
     for (int i = 1; i < otherPoints.size(); i++) {
@@ -80,10 +82,14 @@ static int findClosestPointIndex(Point2 point, List<Point2> otherPoints) {
     return closestIndex
 }
 
-static PolygonROI combineLinesToRoi(List<Point2> firstPoints, List<Point2> lastPoints, ImagePlane plane) {
+PolygonROI combineLinesToRoi(List<Point2> firstPoints, List<Point2> lastPoints, ImagePlane plane) {
     if (firstPoints.last.distance(lastPoints.first) > firstPoints.last.distance(lastPoints.last)) {
         // If the last point of the separator does not closely connect to the first point of the tissue, we need to connect them the other way around
         lastPoints = lastPoints.reversed()
     }
     return ROIs.createPolygonROI(firstPoints + lastPoints, plane)
+}
+
+List<Point2> getGeometryPoints(Geometry interSection) {
+    interSection.getCoordinates().collect { new Point2(it.x, it.y) }
 }
