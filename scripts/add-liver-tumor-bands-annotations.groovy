@@ -1,9 +1,11 @@
 import org.locationtech.jts.geom.Geometry
 import qupath.lib.common.GeneralTools
+import qupath.lib.geom.Point2
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
 import qupath.lib.roi.GeometryTools
 import qupath.lib.roi.ROIs
+import static qupath.lib.gui.scripting.QPEx.* // For getAnnotationObjects(), addObject()
 
 def annotations = getAnnotationObjects()
 
@@ -35,7 +37,9 @@ if (tumorPoints.size() < 3) {
 try {
     // Create polygon ROI (automatically connects last to first point)
     def plane = tumorLineROI.getImagePlane()
-    def polygonROI = ROIs.createPolygonROI(tumorPoints, plane)
+
+    def tissuePoints = tissue.getROI().getAllPoints().subList(0, 1000)
+    def polygonROI = ROIs.createPolygonROI(tumorPoints+tissuePoints, plane)
 
     // Verify the created ROI is a valid area
     if (!polygonROI.isArea()) {
