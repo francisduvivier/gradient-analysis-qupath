@@ -15,7 +15,7 @@ def annotations = getAnnotationObjects()
 
 // Find required annotations
 def tissue = annotations.find { it.getROI().isArea() && it.getName() == 'mTissue' }
-def tumorLine = annotations.find { it.getROI().isLine() }
+def tumorLine = annotations.find { it.getROI().isLine() && it.getROI().geometry.intersects(tissue.getROI().geometry)}
 
 if (tissue == null || tumorLine == null) {
     String missing = []
@@ -67,10 +67,10 @@ Tuple<PolygonROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTu
     print "closestToEndOfTumorIndex: " + closestToEndOfTumorIndex
     def closestPointStartIndex = (int) Math.min(closestToStartOfTumorIndex, closestToEndOfTumorIndex)
     def closestPointEndIndex = (int) Math.max(closestToStartOfTumorIndex, closestToEndOfTumorIndex)
-    List<Point2> halfInInnerPartOfArray = tissuePoints.subList(closestPointStartIndex, closestPointEndIndex)
+    List<Point2> halfInInnerPartOfArray = tissuePoints.subList(closestPointStartIndex, closestPointEndIndex+1)
     print "topTissuePoints: " + halfInInnerPartOfArray.size()
 
-    def halfInOuterPartOfArray = tissuePoints.subList(closestPointEndIndex, tissuePoints.size()) + tissuePoints.subList(0, closestPointStartIndex)
+    def halfInOuterPartOfArray = tissuePoints.subList(closestPointEndIndex, tissuePoints.size()) + tissuePoints.subList(0, closestPointStartIndex+1)
 
     return [halfInInnerPartOfArray, halfInOuterPartOfArray].collect { combineLinesToRoi(tumorLinePoints, it, plane) }
 }
