@@ -51,7 +51,7 @@ List<Tuple<PathObject>> findTissueWithTumorLines() {
 }
 
 Tuple<PathObject> getTissueWithLine(PathObject candidate) {
-    if (!candidate.ROI.isArea()) {
+    if (!candidate.ROI.isArea() || candidate.classifications.contains('Auto')) {
         return null
     }
 
@@ -72,18 +72,19 @@ Tuple<PathObject> getTissueWithLine(PathObject candidate) {
 }
 
 PathObject addAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255, 0)) {
-    def halfTissue = PathObjects.createAnnotationObject(roi)
-    halfTissue.setColor(color)
-    halfTissue.setName(name)
+    def newAnnotation = PathObjects.createAnnotationObject(roi)
+    newAnnotation.setClassifications(['Auto'])
+    newAnnotation.setColor(color)
+    newAnnotation.setName(name)
     Collection<PathObject> annotations = getAnnotationObjects()
     def existing = annotations.find { it.name == name }
     if (existing != null) {
         print "Removing existing annotation [$name]"
         removeObject(existing, false)
     }
-    addObject(halfTissue)
+    addObject(newAnnotation)
     print "Successfully added ROI [$name] annotation"
-    return halfTissue
+    return newAnnotation
 }
 
 Tuple<PolygonROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTumorLine) {
