@@ -61,10 +61,10 @@ private void addHalfTissueAnnotation(GeometryROI tumorLineWithinTissueROI, List<
 
     def topTissueROI = ROIs.createPolygonROI(separatorPoints + halfTissuePoints, plane)
 
-    def tumorArea = PathObjects.createAnnotationObject(topTissueROI)
-    tumorArea.setName(name)
-    addObject(tumorArea)
-    print "Successfully added [$name] boundary annotation"
+    def halfTissue = PathObjects.createAnnotationObject(topTissueROI)
+    halfTissue.setName(name)
+    addObject(halfTissue)
+    print "Successfully added halfTissue [$name] boundary annotation"
 }
 
 def getSeparatedTissuePoints(PathObject tissue, GeometryROI tumorLineWithinTissueROI) {
