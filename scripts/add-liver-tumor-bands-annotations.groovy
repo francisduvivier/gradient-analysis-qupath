@@ -19,6 +19,8 @@ def main() {
     def halves = getSeparatedTissuePoints(tissue, tumorLine)
     addAnnotation(halves[0], 'half[0]')
     addAnnotation(halves[1], 'half[1]')
+    addExpansions(halves[0], tissue, 1)
+    addExpansions(halves[1], tissue, 1)
 }
 
 Tuple<PathObject> findTissueWithTumorLine() {
@@ -88,6 +90,15 @@ PolygonROI combineLinesToRoi(List<Point2> firstPoints, List<Point2> lastPoints, 
         lastPoints = lastPoints.reversed()
     }
     return ROIs.createPolygonROI(firstPoints + lastPoints, plane)
+}
+
+void addExpansions(PolygonROI polygonROI, PathObject pathObject, int amount) {
+    def expansion = polygonROI.geometry.buffer(100)
+    addAnnotation(getROIForGeometry(expansion, polygonROI.imagePlane), 'expansion ' + amount)
+}
+
+ROI getROIForGeometry(Geometry geometry, ImagePlane plane) {
+    return ROIs.createPolygonROI(getGeometryPoints(geometry), plane)
 }
 
 List<Point2> getGeometryPoints(Geometry interSection) {
