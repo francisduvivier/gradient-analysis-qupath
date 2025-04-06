@@ -17,17 +17,15 @@ print('END: main')
 def main() {
     def (PathObject tissue, tumorLine) = findTissueWithTumorLine()
     def halves = getSeparatedTissuePoints(tissue, tumorLine)
-    addAnnotation(halves[0], 'half[0]')
-    addAnnotation(halves[1], 'half[1]')
-    addExpansions('top', halves[0], halves[1], 3, 100)
-    addExpansions('bottom', halves[1], halves[0], 2, 50)
+    annotateHalfWithExpansions('liver', halves[0], halves[1], 3, 100)
+    annotateHalfWithExpansions('tumor', halves[1], halves[0], 2, 50)
 }
 
 Tuple<PathObject> findTissueWithTumorLine() {
     Collection<PathObject> annotations = getAnnotationObjects()
 
     // Find required annotations
-    def tissue = annotations.find { it.ROI.isArea() && it.getName() == 'mTissue' }
+    def tissue = annotations.find { it.ROI.isArea() && it.getName() == 'zTissue' }
     print "Found tissue annotation: ${tissue?.name}"
     def tumorLine = annotations.find { it.ROI.isLine() && it.ROI.geometry.intersects(tissue.ROI.geometry) }
     print "Found tumor line annotation: ${tumorLine?.name}"
@@ -92,7 +90,9 @@ PolygonROI combineLinesToRoi(List<Point2> firstPoints, List<Point2> lastPoints, 
     return ROIs.createPolygonROI(firstPoints + lastPoints, plane)
 }
 
-void addExpansions(String name, PolygonROI polygonROI, PolygonROI otherHalf, int amount, int microns) {
+void annotateHalfWithExpansions(String name, PolygonROI polygonROI, PolygonROI otherHalf, int amount, int microns) {
+    addAnnotation(polygonROI, name)
+
     double distance = getDistance(microns)
     def prevExpansion = polygonROI.geometry
     for (int i = 1; i <= amount; i++) {
@@ -100,7 +100,7 @@ void addExpansions(String name, PolygonROI polygonROI, PolygonROI otherHalf, int
         def expansionBand = expansion.difference(prevExpansion)
         prevExpansion = expansion
         def intersection = expansionBand.intersection(otherHalf.geometry)
-        addAnnotation(getROIForGeometry(intersection, polygonROI.imagePlane), "expansion [$name] [${i * microns} micrometer]")
+        addAnnotation(getROIForGeometry(intersection, polygonROI.imagePlane), "$name [${i * microns} micrometer]")
     }
 }
 
