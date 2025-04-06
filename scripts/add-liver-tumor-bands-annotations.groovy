@@ -14,8 +14,14 @@ main()
 print('END: main')
 
 def main() {
+    def (PathObject tissue, tumorLine) = findTissueWithTumorLine()
+    def halves = getSeparatedTissuePoints(tissue, tumorLine)
+    addHalfTissueAnnotation(halves[0], 'half[0]')
+    addHalfTissueAnnotation(halves[1], 'half[1]')
+}
 
-    def annotations = getAnnotationObjects()
+Tuple<PathObject> findTissueWithTumorLine() {
+    Collection<PathObject> annotations = getAnnotationObjects()
 
     // Find required annotations
     def tissue = annotations.find { it.getROI().isArea() && it.getName() == 'mTissue' }
@@ -27,29 +33,9 @@ def main() {
         String missing = []
         if (tissue == null) missing.add("a closed tissue annotation")
         if (tumorLine == null) missing.add("a tumor line annotation")
-        print "Missing required annotations: need " + missing.join(" and ") + "."
-        return
+        throw new RuntimeException("Missing required annotations: need " + missing.join(" and ") + ".")
     }
-
-
-// Get the tumor line points - corrected method call
-    def tumorLineROI = tumorLine.getROI()
-    def tumorPoints = tumorLineROI.getAllPoints()  // Correct method name for PolylineROI
-
-// Validate we can create a polygon
-    if (tumorPoints.size() < 3) {
-        print "Cannot create area - tumor line needs at least 3 points (has ${tumorPoints.size()})"
-        return
-    }
-
-    try {
-        def halves = getSeparatedTissuePoints(tissue, tumorLine)
-        addHalfTissueAnnotation(halves[0], 'half[0]')
-        addHalfTissueAnnotation(halves[1], 'half[1]')
-
-    } catch (Exception e) {
-        print "Could not create tumor area: " + e.getMessage()
-    }
+    [tissue, tumorLine]
 }
 
 static void addHalfTissueAnnotation(PolygonROI halfTissueROI, String name) {
