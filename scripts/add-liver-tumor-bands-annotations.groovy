@@ -4,6 +4,7 @@ import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
 import qupath.lib.regions.ImagePlane
 import qupath.lib.roi.GeometryROI
+import qupath.lib.roi.PolygonROI
 import qupath.lib.roi.ROIs
 
 import static qupath.lib.gui.scripting.QPEx.*
@@ -38,49 +39,40 @@ if (tumorPoints.size() < 3) {
 }
 
 try {
-    // Create polygon ROI (automatically connects last to first point)
-    def plane = tumorLineROI.getImagePlane()
-
-    Geometry interSection = tumorLineROI.getGeometry().intersection(tissue.getROI().getGeometry())
-    def tumorLineWithinTissueROI = new GeometryROI(interSection, plane)
-
-    def halves = getSeparatedTissuePoints(tissue, tumorLineWithinTissueROI)
-    addHalfTissueAnnotation(tumorLineWithinTissueROI, halves[0], plane, 'half[0]')
-    addHalfTissueAnnotation(tumorLineWithinTissueROI, halves[1], plane, 'half[1]')
+    def halves = getSeparatedTissuePoints(tissue, tumorLine)
+    addHalfTissueAnnotation(halves[0], 'half[0]')
+    addHalfTissueAnnotation(halves[1], 'half[1]')
 
 } catch (Exception e) {
     print "Could not create tumor area: " + e.getMessage()
 }
 
-private void addHalfTissueAnnotation(GeometryROI tumorLineWithinTissueROI, List<Point2> halfTissuePoints, ImagePlane plane, String name) {
-    def separatorPoints = tumorLineWithinTissueROI.getAllPoints()
-    if (separatorPoints.last.distance(halfTissuePoints.first) > separatorPoints.last.distance(halfTissuePoints.last)) {
-        // If the last point of the separator does not closely connect to the first point of the tissue, we need to connect them the other way around
-        halfTissuePoints = halfTissuePoints.reversed()
-    }
-
-    def topTissueROI = ROIs.createPolygonROI(separatorPoints + halfTissuePoints, plane)
-
-    def halfTissue = PathObjects.createAnnotationObject(topTissueROI)
+private void addHalfTissueAnnotation(PolygonROI halfTissueROI, String name) {
+    def halfTissue = PathObjects.createAnnotationObject(halfTissueROI)
     halfTissue.setName(name)
     addObject(halfTissue)
     print "Successfully added halfTissue [$name] boundary annotation"
 }
 
-def getSeparatedTissuePoints(PathObject tissue, GeometryROI tumorLineWithinTissueROI) {
+Tuple<PolygonROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTumorLine) {
+    def plane = tissue.getROI().getImagePlane()
+
+    Geometry interSection = roughTumorLine.getROI().getGeometry().intersection(tissue.getROI().getGeometry())
     def tissuePoints = tissue.getROI().getAllPoints()
-    def tumorLinePoints = tumorLineWithinTissueROI.getAllPoints()
+    def tumorLinePoints = interSection.getCoordinates().collect { new Point2(it.x, it.y) }
+
     def closestToStartOfTumorIndex = findClosestPointIndex(tumorLinePoints.first, tissuePoints)
     print "closestToStartOfTumorIndex: " + closestToStartOfTumorIndex
     def closestToEndOfTumorIndex = findClosestPointIndex(tumorLinePoints.last, tissuePoints)
     print "closestToEndOfTumorIndex: " + closestToEndOfTumorIndex
     def closestPointStartIndex = (int) Math.min(closestToStartOfTumorIndex, closestToEndOfTumorIndex)
     def closestPointEndIndex = (int) Math.max(closestToStartOfTumorIndex, closestToEndOfTumorIndex)
-    List<Point2> topTissuePoints = tissuePoints.subList(closestPointStartIndex, closestPointEndIndex)
-    print "topTissuePoints: " + topTissuePoints.size()
+    List<Point2> halfInInnerPartOfArray = tissuePoints.subList(closestPointStartIndex, closestPointEndIndex)
+    print "topTissuePoints: " + halfInInnerPartOfArray.size()
 
-    def halfInOuterPartOfArray = tissuePoints.subList(closestPointEndIndex, tissuePoints.size())+ tissuePoints.subList(0, closestPointStartIndex)
-    return [topTissuePoints, halfInOuterPartOfArray]
+    def halfInOuterPartOfArray = tissuePoints.subList(closestPointEndIndex, tissuePoints.size()) + tissuePoints.subList(0, closestPointStartIndex)
+
+    return [halfInInnerPartOfArray, halfInOuterPartOfArray].collect { combineLinesToRoi(tumorLinePoints, it, plane) }
 }
 
 static int findClosestPointIndex(Point2 point, List<Point2> otherPoints) {
@@ -95,4 +87,12 @@ static int findClosestPointIndex(Point2 point, List<Point2> otherPoints) {
         }
     }
     return closestIndex
+}
+
+static PolygonROI combineLinesToRoi(List<Point2> firstPoints, List<Point2> lastPoints, ImagePlane plane) {
+    if (firstPoints.last.distance(lastPoints.first) > firstPoints.last.distance(lastPoints.last)) {
+        // If the last point of the separator does not closely connect to the first point of the tissue, we need to connect them the other way around
+        lastPoints = lastPoints.reversed()
+    }
+    return ROIs.createPolygonROI(firstPoints + lastPoints, plane)
 }
