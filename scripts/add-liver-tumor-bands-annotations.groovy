@@ -92,14 +92,15 @@ PolygonROI combineLinesToRoi(List<Point2> firstPoints, List<Point2> lastPoints, 
     return ROIs.createPolygonROI(firstPoints + lastPoints, plane)
 }
 
-void addExpansions(String name, PolygonROI polygonROI, PolygonROI otherHalf, int amount, int distance) {
+void addExpansions(String name, PolygonROI polygonROI, PolygonROI otherHalf, int amount, int microns) {
+    double distance = getDistance(microns)
     def prevExpansion = polygonROI.geometry
     for (int i = 1; i <= amount; i++) {
         def expansion = polygonROI.geometry.buffer(i * distance)
         def expansionBand = expansion.difference(prevExpansion)
         prevExpansion = expansion
         def intersection = expansionBand.intersection(otherHalf.geometry)
-        addAnnotation(getROIForGeometry(intersection, polygonROI.imagePlane), 'expansion [' + name + '] [' + i + ' of ' + amount + ']')
+        addAnnotation(getROIForGeometry(intersection, polygonROI.imagePlane), "expansion [$name] [${i * microns} micrometer]")
     }
 }
 
@@ -109,4 +110,16 @@ ROI getROIForGeometry(Geometry geometry, ImagePlane plane) {
 
 List<Point2> getGeometryPoints(Geometry interSection) {
     interSection.getCoordinates().collect { new Point2(it.x, it.y) }
+}
+
+double getDistance(double microns) {
+    def imageData = getCurrentImageData()
+    def server = imageData.getServer()
+// We need the pixel size
+    def cal = server.getPixelCalibration()
+    if (!cal.hasPixelSizeMicrons()) {
+        print 'We need the pixel size information here!'
+        throw new RuntimeException("We need the pixel size information here!")
+    }
+    return microns / cal.getAveragedPixelSizeMicrons()
 }
