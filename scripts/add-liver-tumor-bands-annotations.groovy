@@ -7,6 +7,7 @@ import qupath.lib.regions.ImagePlane
 import qupath.lib.roi.PolygonROI
 import qupath.lib.roi.ROIs
 import qupath.lib.roi.interfaces.ROI
+import qupath.lib.roi.GeometryTools
 
 import static qupath.lib.gui.scripting.QPEx.*
 
@@ -35,17 +36,17 @@ def main() {
 }
 
 
-Geometry annotateHalfWithExpansions(String name, PolygonROI startPolygon, PolygonROI interSectingPolygon, int amount, int microns) {
+Geometry annotateHalfWithExpansions(String name, PolygonROI startPolygon, PolygonROI intersectingPolygon, int amount, int microns) {
     double distance = getDistance(microns)
     def prevExpansion = startPolygon.geometry
     for (int i = 1; i <= amount; i++) {
         def expansion = startPolygon.geometry.buffer(i * distance)
         def expansionBand = expansion.difference(prevExpansion)
         prevExpansion = expansion
-        def intersection = expansionBand.intersection(interSectingPolygon.geometry)
+        def intersection = expansionBand.intersection(intersectingPolygon.geometry)
 
         def bandColor = makeRGB(20 * i, 40 * i, 200 - 30 * i)
-        addAnnotation(getROIForGeometry(intersection, startPolygon.imagePlane), "$name [${i * microns} micrometer]", bandColor)
+        addAnnotation(GeometryTools.geometryToROI(intersection, startPolygon.imagePlane), "$name [${i * microns} µm]", bandColor)
     }
     return prevExpansion
 }
@@ -142,11 +143,6 @@ PolygonROI combineLinesToRoi(List<Point2> firstPoints, List<Point2> lastPoints, 
     return ROIs.createPolygonROI(firstPoints + lastPoints, plane)
 }
 
-
-ROI getROIForGeometry(Geometry geometry, ImagePlane plane) {
-    return ROIs.createPolygonROI(getGeometryPoints(geometry), plane)
-}
-
 List<Point2> getGeometryPoints(Geometry interSection) {
     interSection.getCoordinates().collect { new Point2(it.x, it.y) }
 }
@@ -169,5 +165,6 @@ boolean isTumor(PolygonROI polygonROI) {
 }
 
 ROI createCentralROI(PolygonROI startRoi, Geometry biggestExpansion) {
-return ROIs.createPolygonROI(getGeometryPoints(startRoi.geometry.difference(biggestExpansion)), startRoi.imagePlane)
+    def centralGeometry = startRoi.geometry.difference(biggestExpansion)
+    return GeometryTools.geometryToROI(centralGeometry, startRoi.imagePlane)
 }
