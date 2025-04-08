@@ -26,7 +26,7 @@ def main() {
         def biggestLiverExpansion = annotateHalfWithExpansions("[$coreIndex]_tumor", liver, tumor, 6, 100)
         addAnnotation(createCentralROI(tumor, biggestLiverExpansion), "[$coreIndex]_centralTumor", makeRGB(0, 150, 0))
 
-        addAnnotation(liver, "[$coreIndex]_tumor", makeRGB(150, 150, 0))
+        addAnnotation(tumor, "[$coreIndex]_tumor", makeRGB(150, 150, 0))
         def biggestTumorExpansion = annotateHalfWithExpansions("[$coreIndex]_liver", tumor, liver, 4, 100)
         addAnnotation(createCentralROI(liver, biggestTumorExpansion), "[$coreIndex]_centralLiver", makeRGB(0, 150, 0))
 
