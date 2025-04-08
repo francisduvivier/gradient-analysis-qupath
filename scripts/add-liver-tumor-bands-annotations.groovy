@@ -22,13 +22,13 @@ def main() {
         def (tissue, tumorLine) = tissueAndLine
         def (liver, tumor) = getSeparatedTissuePoints(tissue, tumorLine)
 
-        addAnnotation(liver, "[$coreIndex]_liver", makeRGB(150, 150, 0))
-        def biggestLiverExpansion = annotateHalfWithExpansions("[$coreIndex]_tumor", liver, tumor, 6, 100)
-        addAnnotation(createCentralROI(tumor, biggestLiverExpansion), "[$coreIndex]_centralTumor", makeRGB(0, 150, 0))
+        addAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
+        def biggestLiverExpansion = annotateHalfWithExpansions("${coreIndex}_tumor", liver, tumor, 6, 100)
+        addAnnotation(createCentralROI(tumor, biggestLiverExpansion), "${coreIndex}_tumor_central", makeRGB(0, 150, 0))
 
-        addAnnotation(tumor, "[$coreIndex]_tumor", makeRGB(150, 150, 0))
-        def biggestTumorExpansion = annotateHalfWithExpansions("[$coreIndex]_liver", tumor, liver, 4, 100)
-        addAnnotation(createCentralROI(liver, biggestTumorExpansion), "[$coreIndex]_centralLiver", makeRGB(0, 150, 0))
+        addAnnotation(tumor, "${coreIndex}_tumor", makeRGB(150, 150, 0))
+        def biggestTumorExpansion = annotateHalfWithExpansions("${coreIndex}_liver", tumor, liver, 4, 100)
+        addAnnotation(createCentralROI(liver, biggestTumorExpansion), "${coreIndex}_liver_central", makeRGB(0, 150, 0))
 
         coreIndex++
     }
@@ -46,7 +46,7 @@ Geometry annotateHalfWithExpansions(String name, PolygonROI startPolygon, Polygo
         def intersection = expansionBand.intersection(intersectingPolygon.geometry)
 
         def bandColor = makeRGB(20 * i, 40 * i, 200 - 30 * i)
-        addAnnotation(GeometryTools.geometryToROI(intersection, startPolygon.imagePlane), "$name [${i * microns} µm]", bandColor)
+        addAnnotation(GeometryTools.geometryToROI(intersection, startPolygon.imagePlane), "${name}_${i * microns}µm", bandColor)
     }
     return prevExpansion
 }
