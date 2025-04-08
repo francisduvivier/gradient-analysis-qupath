@@ -16,7 +16,7 @@ main()
 print('END: main')
 
 def main() {
-//    cleanupAutoAnnotations()
+    cleanupAutoAnnotations()
     List<Tuple<PathObject>> tissuesWithLine = findTissueWithTumorLines()
     Integer coreIndex = 0
     for (Tuple<PathObject> tissueAndLine : tissuesWithLine) {
@@ -147,9 +147,5 @@ ROI createCentralROI(ROI startRoi, Geometry biggestExpansion) {
 
 void cleanupAutoAnnotations() {
     Collection<PathObject> annotations = getAnnotationObjects()
-    for(PathObject annotation : annotations) {
-        if (annotation.classifications.contains('Auto')) {
-            removeObject(annotation, false)
-        }
-    }
+    removeObjects(annotations.findAll {it.classifications.contains('Auto')}, false)
 }
