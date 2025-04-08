@@ -1,11 +1,7 @@
 //file:noinspection GrMethodMayBeStatic
 import org.locationtech.jts.geom.Geometry
-import qupath.lib.geom.Point2
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
-import qupath.lib.regions.ImagePlane
-import qupath.lib.roi.PolygonROI
-import qupath.lib.roi.ROIs
 import qupath.lib.roi.interfaces.ROI
 import qupath.lib.roi.GeometryTools
 
@@ -22,24 +18,27 @@ def main() {
     for (Tuple<PathObject> tissueAndLine : tissuesWithLine) {
         def (tissue, tumorLine) = tissueAndLine
         def (liver, tumor) = getSeparatedTissuePoints(tissue, tumorLine)
+        List<PathObject> tissueAnnotations = []
+        tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
+        def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liver, tumor, 6, 100)
+        tissueAnnotations.addAll(liverExpansionAnnotations)
+        tissueAnnotations << getAnnotation(createCentralROI(tumor, biggestLiverExpansion), "${coreIndex}_tumor_central", makeRGB(0, 150, 0))
 
-        addAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
-        def biggestLiverExpansion = annotateHalfWithExpansions("${coreIndex}_tumor", liver, tumor, 6, 100)
-        addAnnotation(createCentralROI(tumor, biggestLiverExpansion), "${coreIndex}_tumor_central", makeRGB(0, 150, 0))
-
-        addAnnotation(tumor, "${coreIndex}_tumor", makeRGB(150, 150, 0))
-        def biggestTumorExpansion = annotateHalfWithExpansions("${coreIndex}_liver", tumor, liver, 4, 100)
-        addAnnotation(createCentralROI(liver, biggestTumorExpansion), "${coreIndex}_liver_central", makeRGB(0, 150, 0))
-
+        tissueAnnotations << getAnnotation(tumor, "${coreIndex}_tumor", makeRGB(150, 150, 0))
+        def (biggestTumorExpansion, tumorExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_liver", tumor, liver, 4, 100)
+        tissueAnnotations.addAll(tumorExpansionAnnotations)
+        tissueAnnotations << getAnnotation(createCentralROI(liver, biggestTumorExpansion), "${coreIndex}_liver_central", makeRGB(0, 150, 0))
+        addObjects(tissueAnnotations)
         coreIndex++
     }
 
 }
 
 
-Geometry annotateHalfWithExpansions(String name, ROI startPolygon, ROI intersectingPolygon, int amount, int microns) {
+def annotateHalfWithExpansions(String name, ROI startPolygon, ROI intersectingPolygon, int amount, int microns) {
     double distance = getDistance(microns)
     def prevExpansion = startPolygon.geometry
+    List<PathObject> newAnnotations = []
     for (int i = 1; i <= amount; i++) {
         def expansion = startPolygon.geometry.buffer(i * distance)
         def expansionBand = expansion.difference(prevExpansion)
@@ -47,9 +46,9 @@ Geometry annotateHalfWithExpansions(String name, ROI startPolygon, ROI intersect
         def intersection = expansionBand.intersection(intersectingPolygon.geometry)
 
         def bandColor = makeRGB(20 * i, 40 * i, 200 - 30 * i)
-        addAnnotation(GeometryTools.geometryToROI(intersection, startPolygon.imagePlane), "${name}_${i * microns}µm", bandColor)
+        newAnnotations << getAnnotation(GeometryTools.geometryToROI(intersection, startPolygon.imagePlane), "${name}_${i * microns}µm", bandColor)
     }
-    return prevExpansion
+    return [prevExpansion, newAnnotations]
 }
 
 List<Tuple<PathObject>> findTissueWithTumorLines() {
@@ -79,7 +78,7 @@ Tuple<PathObject> getTissueWithLine(PathObject candidate) {
     return [tissue, tumorLine]
 }
 
-PathObject addAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255, 0)) {
+PathObject getAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255, 0)) {
     def newAnnotation = PathObjects.createAnnotationObject(roi)
     newAnnotation.setClassifications(['Auto'])
     newAnnotation.setColor(color)
@@ -90,37 +89,17 @@ PathObject addAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255,
         print "Removing existing annotation [$name]"
         removeObject(existing, false)
     }
-    addObject(newAnnotation)
     print "Successfully added ROI [$name] annotation"
     return newAnnotation
 }
 
 Tuple<ROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTumorLine) {
     def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, [roughTumorLine.ROI.geometry])
-    def halves = halvesGeometries.collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane)}
+    def halves = halvesGeometries.collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
     if (isTumor(halves[0])) {
         halves = halves.reverse()
     }
     return halves
-}
-
-
-int findClosestPointIndex(Point2 point, List<Point2> otherPoints) {
-    def closestIndex = 0
-    def closestDistance = otherPoints[closestIndex].distance(point)
-    for (int i = 1; i < otherPoints.size(); i++) {
-        def otherPoint = otherPoints[i]
-        def distance = otherPoint.distance(point)
-        if (distance < closestDistance) {
-            closestIndex = i
-            closestDistance = distance
-        }
-    }
-    return closestIndex
-}
-
-List<Point2> getGeometryPoints(Geometry interSection) {
-    interSection.getCoordinates().collect { new Point2(it.x, it.y) }
 }
 
 double getDistance(double microns) {
@@ -137,7 +116,7 @@ double getDistance(double microns) {
 
 boolean isTumor(ROI polygonROI) {
     Collection<PathObject> annotations = getAnnotationObjects()
-    return annotations.find { it.classifications.contains('Tumor') && polygonROI.geometry.intersects(it.ROI.geometry)} != null
+    return annotations.find { it.classifications.contains('Tumor') && polygonROI.geometry.intersects(it.ROI.geometry) } != null
 }
 
 ROI createCentralROI(ROI startRoi, Geometry biggestExpansion) {
@@ -147,5 +126,5 @@ ROI createCentralROI(ROI startRoi, Geometry biggestExpansion) {
 
 void cleanupAutoAnnotations() {
     Collection<PathObject> annotations = getAnnotationObjects()
-    removeObjects(annotations.findAll {it.classifications.contains('Auto')}, false)
+    removeObjects(annotations.findAll { it.classifications.contains('Auto') }, false)
 }
