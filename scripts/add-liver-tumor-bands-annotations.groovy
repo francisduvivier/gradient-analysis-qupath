@@ -16,6 +16,7 @@ main()
 print('END: main')
 
 def main() {
+    cleanupAutoAnnotations()
     List<Tuple<PathObject>> tissuesWithLine = findTissueWithTumorLines()
     Integer coreIndex = 0
     for (Tuple<PathObject> tissueAndLine : tissuesWithLine) {
@@ -167,4 +168,13 @@ boolean isTumor(PolygonROI polygonROI) {
 ROI createCentralROI(PolygonROI startRoi, Geometry biggestExpansion) {
     def centralGeometry = startRoi.geometry.difference(biggestExpansion)
     return GeometryTools.geometryToROI(centralGeometry, startRoi.imagePlane)
+}
+
+void cleanupAutoAnnotations() {
+    Collection<PathObject> annotations = getAnnotationObjects()
+    for(PathObject annotation : annotations) {
+        if (annotation.classifications.contains('Auto')) {
+            removeObject(annotation, false)
+        }
+    }
 }
