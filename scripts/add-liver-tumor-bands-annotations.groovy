@@ -16,7 +16,7 @@ main()
 print('END: main')
 
 def main() {
-    cleanupAutoAnnotations()
+//    cleanupAutoAnnotations()
     List<Tuple<PathObject>> tissuesWithLine = findTissueWithTumorLines()
     Integer coreIndex = 0
     for (Tuple<PathObject> tissueAndLine : tissuesWithLine) {
@@ -37,7 +37,7 @@ def main() {
 }
 
 
-Geometry annotateHalfWithExpansions(String name, PolygonROI startPolygon, PolygonROI intersectingPolygon, int amount, int microns) {
+Geometry annotateHalfWithExpansions(String name, ROI startPolygon, ROI intersectingPolygon, int amount, int microns) {
     double distance = getDistance(microns)
     def prevExpansion = startPolygon.geometry
     for (int i = 1; i <= amount; i++) {
@@ -95,26 +95,9 @@ PathObject addAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255,
     return newAnnotation
 }
 
-Tuple<PolygonROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTumorLine) {
-    def plane = tissue.ROI.imagePlane
-
-    Geometry interSection = roughTumorLine.ROI.getGeometry().intersection(tissue.ROI.getGeometry())
-    def tissuePoints = tissue.ROI.getAllPoints()
-    def tumorLinePoints = getGeometryPoints(interSection)
-
-    def closestToStartOfTumorIndex = findClosestPointIndex(tumorLinePoints.first, tissuePoints)
-    print "closestToStartOfTumorIndex: " + closestToStartOfTumorIndex
-    def closestToEndOfTumorIndex = findClosestPointIndex(tumorLinePoints.last, tissuePoints)
-    print "closestToEndOfTumorIndex: " + closestToEndOfTumorIndex
-    def closestPointStartIndex = (int) Math.min(closestToStartOfTumorIndex, closestToEndOfTumorIndex)
-    def closestPointEndIndex = (int) Math.max(closestToStartOfTumorIndex, closestToEndOfTumorIndex)
-    List<Point2> halfInInnerPartOfArray = tissuePoints.subList(closestPointStartIndex, closestPointEndIndex + 1)
-    print "topTissuePoints: " + halfInInnerPartOfArray.size()
-
-    def halfInOuterPartOfArray = tissuePoints.subList(closestPointEndIndex, tissuePoints.size()) + tissuePoints.subList(0, closestPointStartIndex + 1)
-
-
-    def halves = [halfInInnerPartOfArray, halfInOuterPartOfArray].collect { combineLinesToRoi(tumorLinePoints, it, plane) }
+Tuple<ROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTumorLine) {
+    def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, [roughTumorLine.ROI.geometry])
+    def halves = halvesGeometries.collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane)}
     if (isTumor(halves[0])) {
         halves = halves.reverse()
     }
@@ -136,14 +119,6 @@ int findClosestPointIndex(Point2 point, List<Point2> otherPoints) {
     return closestIndex
 }
 
-PolygonROI combineLinesToRoi(List<Point2> firstPoints, List<Point2> lastPoints, ImagePlane plane) {
-    if (firstPoints.last.distance(lastPoints.first) > firstPoints.last.distance(lastPoints.last)) {
-        // If the last point of the separator does not closely connect to the first point of the tissue, we need to connect them the other way around
-        lastPoints = lastPoints.reversed()
-    }
-    return ROIs.createPolygonROI(firstPoints + lastPoints, plane)
-}
-
 List<Point2> getGeometryPoints(Geometry interSection) {
     interSection.getCoordinates().collect { new Point2(it.x, it.y) }
 }
@@ -160,12 +135,12 @@ double getDistance(double microns) {
     return microns / cal.getAveragedPixelSizeMicrons()
 }
 
-boolean isTumor(PolygonROI polygonROI) {
+boolean isTumor(ROI polygonROI) {
     Collection<PathObject> annotations = getAnnotationObjects()
     return annotations.find { it.classifications.contains('Tumor') && polygonROI.geometry.intersects(it.ROI.geometry)} != null
 }
 
-ROI createCentralROI(PolygonROI startRoi, Geometry biggestExpansion) {
+ROI createCentralROI(ROI startRoi, Geometry biggestExpansion) {
     def centralGeometry = startRoi.geometry.difference(biggestExpansion)
     return GeometryTools.geometryToROI(centralGeometry, startRoi.imagePlane)
 }
