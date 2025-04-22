@@ -55,7 +55,7 @@ def annotateHalfWithExpansions(String name, ROI startPolygon, ROI intersectingPo
         def intersection = expansionBand.intersection(intersectingPolygon.geometry)
 
         def bandColor = makeRGB(20 * i, 40 * i, 200 - 30 * i)
-        newAnnotations << getAnnotation(GeometryTools.geometryToROI(intersection, startPolygon.imagePlane), "${name}_${totalMicrons}µm", bandColor)
+        newAnnotations << getAnnotation(GeometryTools.geometryToROI(intersection, startPolygon.imagePlane), "${name}_${String.format('%04d', totalMicrons)}µm", bandColor)
     }
     return [prevExpansion, newAnnotations]
 }
