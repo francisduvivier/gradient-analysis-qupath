@@ -67,27 +67,28 @@ List<TissueWithLines> findTissueWithTumorLines() {
 }
 
 @ImmutableOptions(knownImmutableClasses = [PathObject])
-record TissueWithLines(PathObject tissue, Collection<PathObject> lines){}
+record TissueWithLines(PathObject tissue, Collection<PathObject> lines) {}
 
-TissueWithLines getTissueWithLine(PathObject candidate) {
-    assert candidate != null
-    if (!candidate.ROI.isArea() || candidate.classifications.contains('Auto')) {
+TissueWithLines getTissueWithLine(PathObject candidateTissue) {
+    assert candidateTissue != null
+    if (!candidateTissue.ROI.isArea() || candidateTissue.classifications.contains('Auto')) {
         return null
     }
 
-    def tissue = candidate
-    print "Found tissue annotation: ${tissue?.name}"
+    print "Found tissue annotation: ${candidateTissue?.name}"
 
     Collection<PathObject> annotations = getAnnotationObjects()
-    Collection<PathObject> tissueLines = findLinesForTissue(annotations, tissue)
-
-    return new TissueWithLines(tissue, tissueLines)
+    Collection<PathObject> tissueLines = findLinesForTissue(annotations, candidateTissue)
+    if(!(tissueLines?.size() > 0)) {
+        return null
+    }
+    return new TissueWithLines(candidateTissue, tissueLines)
 }
 
 Collection<PathObject> findLinesForTissue(Collection<PathObject> annotations, PathObject tissue) {
     Collection<PathObject> lines = annotations.findAll { it.ROI.isLine() && it.ROI.geometry.intersects(tissue.ROI.geometry) }
     if (lines.size() == 0) {
-        throw new Error("No tumor line annotation found for tissue [${tissue?.getID()}]")
+        return null
     } else if (lines.size() == 1) {
         print "Found tumor line for tissue: [${tissue?.getID()}]"
     } else if (lines.size() == 2) {
@@ -115,20 +116,26 @@ PathObject getAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255,
 
 Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     def (tissue, tumorLines) = [tissueAndLines.tissue(), tissueAndLines.lines()]
-    def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, tumorLines.collect {it.ROI.geometry})
-    if(halvesGeometries.size() == 3) {
-        print("found tree parts for tissue [${tissue.getID()}], merging to make overlapping parts")
-        halvesGeometries = [halvesGeometries[0].union(halvesGeometries[2]), halvesGeometries[1].union(halvesGeometries[2])]
+    def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, tumorLines.collect { it.ROI.geometry })
+    def tumor = halvesGeometries.find { isTumor(it) }
+    if(tumor == null) {
+        throw new Error("No tumor geometry found in tissue [${tissue?.getID()}], please check the annotations")
     }
-    if(halvesGeometries.size() > 3) {
+    if (halvesGeometries.size() == 2) {
+        def liver = halvesGeometries.find { it != tumor }
+        return [liver, tumor].collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
+    }
+    if (halvesGeometries.size() !== 3) {
         throw new Error("Expected 2 or 3 halves, but got ${halvesGeometries.size()}")
     }
-    List<ROI> halves = halvesGeometries.collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
-    if (isTumor(halves[0])) {
-        halves = halves.reverse()
+    def geometriesTouchingTumor = halvesGeometries.findAll { it.touches(tumor) }
+    if (geometriesTouchingTumor.size() != 1) {
+        throw new Error("Expected 1 geometry that touches the tumor geometry, but got ${geometriesTouchingTumor.size()}")
     }
-    def (liverWC, tumorWC) = halves
-    return [liverWC, tumorWC]
+    def (separator) = geometriesTouchingTumor
+
+    def liver = halvesGeometries.find { it != tumor && it != separator }
+    return [liver, tumor].collect { GeometryTools.geometryToROI(it.union(separator), tissue.ROI.imagePlane) }
 }
 
 double getDistance(double microns) {
@@ -143,9 +150,9 @@ double getDistance(double microns) {
     return microns / cal.getAveragedPixelSizeMicrons()
 }
 
-boolean isTumor(ROI polygonROI) {
+boolean isTumor(Geometry geom) {
     Collection<PathObject> annotations = getAnnotationObjects()
-    return annotations.find { it.classifications.contains('Tumor') && polygonROI.geometry.intersects(it.ROI.geometry) } != null
+    return annotations.find { it.classifications.contains('Tumor') && geom.intersects(it.ROI.geometry) } != null
 }
 
 ROI createCentralROI(ROI startRoi, Geometry biggestExpansion) {
