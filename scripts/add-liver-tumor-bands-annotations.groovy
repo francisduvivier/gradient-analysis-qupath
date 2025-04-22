@@ -2,6 +2,7 @@
 
 
 import groovy.transform.ImmutableOptions
+import org.locationtech.jts.geom.Coordinate
 import org.locationtech.jts.geom.Geometry
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
@@ -25,6 +26,10 @@ def main() {
         def liverWC = unionROI(liver, capsule)
         def tumorWC = unionROI(tumor, capsule)
         List<PathObject> tissueAnnotations = []
+        def (liverCapsule, tumorCapsule) = splitROIInHalves(capsule, liver, tumor)
+//        tissueAnnotations << getAnnotation(capsule, "${coreIndex}_whole_capsule", makeRGB(0, 150, 0))
+        tissueAnnotations << getAnnotation(tumorCapsule, "${coreIndex}_tumor_capsule", makeRGB(0, 150, 0))
+        tissueAnnotations << getAnnotation(liverCapsule, "${coreIndex}_liver_capsule", makeRGB(0, 150, 0))
         tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
         def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liverWC, tumorWC, liverBands)
         tissueAnnotations.addAll(liverExpansionAnnotations)
@@ -78,7 +83,7 @@ TissueWithLines getTissueWithLine(PathObject candidateTissue) {
 
     Collection<PathObject> annotations = getAnnotationObjects()
     Collection<PathObject> tissueLines = findLinesForTissue(annotations, candidateTissue)
-    if(!(tissueLines?.size() > 0)) {
+    if (!(tissueLines?.size() > 0)) {
         return null
     }
     return new TissueWithLines(candidateTissue, tissueLines)
@@ -117,7 +122,7 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     def (tissue, tumorLines) = [tissueAndLines.tissue(), tissueAndLines.lines()]
     def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, tumorLines.collect { it.ROI.geometry })
     def tumor = halvesGeometries.find { isTumor(it) }
-    if(tumor == null) {
+    if (tumor == null) {
         throw new Error("No tumor geometry found in tissue [${tissue?.getID()}], please check the annotations")
     }
     if (halvesGeometries.size() == 2) {
@@ -166,11 +171,51 @@ void cleanupAutoAnnotations() {
 
 
 ROI unionROI(ROI roi1, ROI roi2) {
-    if(roi2 == null){
+    if (roi2 == null) {
         return roi1
     }
-    if(roi1 == null){
+    if (roi1 == null) {
         return roi2
     }
     return GeometryTools.geometryToROI(roi1.geometry.union(roi2.geometry), roi1.imagePlane)
+}
+
+Tuple<ROI> splitROIInHalves(ROI capsule, ROI liver, ROI tumor) {
+    def capsuleGeometry = capsule.geometry
+    def tumorGeometry = tumor.geometry
+    def liverGeometry = liver.geometry
+    def midline = createMidlineString(capsuleGeometry, tumorGeometry, liverGeometry)
+    assert midline.intersects(capsuleGeometry)
+    def (left, right) = GeometryTools.splitGeometryByLineStrings(capsuleGeometry, [midline])
+    assert left != null
+    assert right != null
+    def tumorCapsule = left.touches(tumorGeometry) ? left : right
+    def liverCapsule = left === tumorCapsule ? right : left
+    return [liverCapsule, tumorCapsule].collect { GeometryTools.geometryToROI(it, capsule.imagePlane) }
+}
+
+Geometry createMidlineString(Geometry geometry, Geometry tumorGeometry, Geometry liverGeometry) {
+    def liverFacingWall = geometry.intersection(liverGeometry)
+    def tumorFacingWall = geometry.intersection(tumorGeometry)
+    return createMidlineIn(liverFacingWall, tumorFacingWall, geometry)
+}
+
+Geometry createMidlineIn(Geometry line1, Geometry line2, Geometry shapeThatShouldBeSplit) {
+    def factory = shapeThatShouldBeSplit.getFactory()
+    def boundary = shapeThatShouldBeSplit.getBoundary()
+
+    def inter1 = line1.intersection(boundary)
+    def inter2 = line2.intersection(boundary)
+
+    if (inter1.isEmpty() || inter2.isEmpty()) {
+        throw new Error("Failed to find boundary intersections.")
+    }
+
+    def A = inter1.getCoordinates()[0]
+    def B = inter2.getCoordinates()[0]
+
+    // Compute the midpoint between the boundary intersections
+    def mid = new Coordinate((A.x + B.x) / 2.0, (A.y + B.y) / 2.0)
+
+    return factory.createLineString([A, mid, B] as Coordinate[])
 }
