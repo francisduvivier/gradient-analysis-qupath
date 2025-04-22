@@ -115,12 +115,19 @@ PathObject getAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255,
 
 Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     def (tissue, tumorLines) = [tissueAndLines.tissue(), tissueAndLines.lines()]
-    def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, [tumorLines[0].ROI.geometry])
+    def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, tumorLines.collect {it.ROI.geometry})
+    if(halvesGeometries.size() == 3) {
+        print("found tree parts for tissue [${tissue.getID()}], merging to make overlapping parts")
+        halvesGeometries = [halvesGeometries[0].union(halvesGeometries[2]), halvesGeometries[1].union(halvesGeometries[2])]
+    }
+    if(halvesGeometries.size() > 3) {
+        throw new Error("Expected 2 or 3 halves, but got ${halvesGeometries.size()}")
+    }
     List<ROI> halves = halvesGeometries.collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
     if (isTumor(halves[0])) {
         halves = halves.reverse()
     }
-    def (liverWC, tumorWC) = [halves[0], halves[1]]
+    def (liverWC, tumorWC) = halves
     return [liverWC, tumorWC]
 }
 
