@@ -1,4 +1,8 @@
 //file:noinspection GrMethodMayBeStatic
+
+
+import groovy.transform.ImmutableOptions
+import groovy.transform.ImmutableProperties
 import org.locationtech.jts.geom.Geometry
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
@@ -15,19 +19,20 @@ def main() {
     List<Integer> liverBands = [100] * 6 + [500] * 5
     List<Integer> tumorBands = [100] * 6 + [500] * 5
     cleanupAutoAnnotations()
-    List<Tuple<PathObject>> tissuesWithLine = findTissueWithTumorLines()
+    List<TissueWithLines> tissuesWithLine = findTissueWithTumorLines()
     Integer coreIndex = 0
-    for (Tuple<PathObject> tissueAndLine : tissuesWithLine) {
-        def (tissue, tumorLine) = tissueAndLine
-        def (liver, tumor) = getSeparatedTissuePoints(tissue, tumorLine)
+    for (TissueWithLines tissueAndLines : tissuesWithLine) {
+        def (liverWC, tumorWC) = getSeparatedTissueParts(tissueAndLines)
+        def tumor = diffRoi(tumorWC, liverWC)
+        def liver = diffRoi(liverWC, tumorWC)
         List<PathObject> tissueAnnotations = []
         tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
-        def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liver, tumor, liverBands)
+        def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liverWC, tumorWC, liverBands)
         tissueAnnotations.addAll(liverExpansionAnnotations)
         tissueAnnotations << getAnnotation(createCentralROI(tumor, biggestLiverExpansion), "${coreIndex}_tumor_central", makeRGB(0, 150, 0))
 
         tissueAnnotations << getAnnotation(tumor, "${coreIndex}_tumor", makeRGB(150, 150, 0))
-        def (biggestTumorExpansion, tumorExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_liver", tumor, liver, tumorBands)
+        def (biggestTumorExpansion, tumorExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_liver", tumorWC, liverWC, tumorBands)
         tissueAnnotations.addAll(tumorExpansionAnnotations)
         tissueAnnotations << getAnnotation(createCentralROI(liver, biggestTumorExpansion), "${coreIndex}_liver_central", makeRGB(0, 150, 0))
         addObjects(tissueAnnotations)
@@ -55,13 +60,17 @@ def annotateHalfWithExpansions(String name, ROI startPolygon, ROI intersectingPo
     return [prevExpansion, newAnnotations]
 }
 
-List<Tuple<PathObject>> findTissueWithTumorLines() {
+List<TissueWithLines> findTissueWithTumorLines() {
     Collection<PathObject> annotations = getAnnotationObjects()
     // Find required annotations
     return annotations.collect { getTissueWithLine(it) }.findAll { it !== null }
 }
 
-Tuple<PathObject> getTissueWithLine(PathObject candidate) {
+@ImmutableOptions(knownImmutableClasses = [PathObject])
+record TissueWithLines(PathObject tissue, Collection<PathObject> lines){}
+
+TissueWithLines getTissueWithLine(PathObject candidate) {
+    assert candidate != null
     if (!candidate.ROI.isArea() || candidate.classifications.contains('Auto')) {
         return null
     }
@@ -70,16 +79,23 @@ Tuple<PathObject> getTissueWithLine(PathObject candidate) {
     print "Found tissue annotation: ${tissue?.name}"
 
     Collection<PathObject> annotations = getAnnotationObjects()
-    def tumorLine = annotations.find { it.ROI.isLine() && it.ROI.geometry.intersects(tissue.ROI.geometry) }
-    print "Found tumor line annotation: ${tumorLine?.name}"
+    Collection<PathObject> tissueLines = findLinesForTissue(annotations, tissue)
 
-    if (tissue == null || tumorLine == null) {
-        String[] missing = []
-        if (tissue == null) missing.add("a closed tissue annotation")
-        if (tumorLine == null) missing.add("a tumor line annotation")
-        throw new RuntimeException("Missing required annotations: need " + missing.join(" and ") + ".")
+    return new TissueWithLines(tissue, tissueLines)
+}
+
+Collection<PathObject> findLinesForTissue(Collection<PathObject> annotations, PathObject tissue) {
+    Collection<PathObject> lines = annotations.findAll { it.ROI.isLine() && it.ROI.geometry.intersects(tissue.ROI.geometry) }
+    if (lines.size() == 0) {
+        throw new Error("No tumor line annotation found for tissue [${tissue?.getID()}]")
+    } else if (lines.size() == 1) {
+        print "Found tumor line for tissue: [${tissue?.getID()}]"
+    } else if (lines.size() == 2) {
+        print "Found tumor and liver line for tissue: [${tissue?.getID()}]"
+    } else {
+        throw new Error("More than 2 line annotations found for tissue [${tissue?.getID()}]")
     }
-    return [tissue, tumorLine]
+    return lines
 }
 
 PathObject getAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255, 0)) {
@@ -97,13 +113,15 @@ PathObject getAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255,
     return newAnnotation
 }
 
-Tuple<ROI> getSeparatedTissuePoints(PathObject tissue, PathObject roughTumorLine) {
-    def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, [roughTumorLine.ROI.geometry])
-    def halves = halvesGeometries.collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
+Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
+    def (tissue, tumorLines) = [tissueAndLines.tissue(), tissueAndLines.lines()]
+    def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, [tumorLines[0].ROI.geometry])
+    List<ROI> halves = halvesGeometries.collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
     if (isTumor(halves[0])) {
         halves = halves.reverse()
     }
-    return halves
+    def (liverWC, tumorWC) = [halves[0], halves[1]]
+    return [liverWC, tumorWC]
 }
 
 double getDistance(double microns) {
@@ -131,4 +149,8 @@ ROI createCentralROI(ROI startRoi, Geometry biggestExpansion) {
 void cleanupAutoAnnotations() {
     Collection<PathObject> annotations = getAnnotationObjects()
     removeObjects(annotations.findAll { it.classifications.contains('Auto') }, false)
+}
+
+ROI diffRoi(ROI roi1, ROI roi2) {
+    return GeometryTools.geometryToROI(roi1.geometry.difference(roi2.geometry), roi1.imagePlane)
 }
