@@ -2,7 +2,6 @@
 
 
 import groovy.transform.ImmutableOptions
-import groovy.transform.ImmutableProperties
 import org.locationtech.jts.geom.Geometry
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
@@ -22,9 +21,9 @@ def main() {
     List<TissueWithLines> tissuesWithLine = findTissueWithTumorLines()
     Integer coreIndex = 0
     for (TissueWithLines tissueAndLines : tissuesWithLine) {
-        def (liverWC, tumorWC) = getSeparatedTissueParts(tissueAndLines)
-        def tumor = diffRoi(tumorWC, liverWC)
-        def liver = diffRoi(liverWC, tumorWC)
+        def (liver, tumor, capsule) = getSeparatedTissueParts(tissueAndLines)
+        def liverWC = unionROI(liver, capsule)
+        def tumorWC = unionROI(tumor, capsule)
         List<PathObject> tissueAnnotations = []
         tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
         def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liverWC, tumorWC, liverBands)
@@ -132,10 +131,10 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     if (geometriesTouchingTumor.size() != 1) {
         throw new Error("Expected 1 geometry that touches the tumor geometry, but got ${geometriesTouchingTumor.size()}")
     }
-    def (separator) = geometriesTouchingTumor
+    def (capsule) = geometriesTouchingTumor
 
-    def liver = halvesGeometries.find { it != tumor && it != separator }
-    return [liver, tumor].collect { GeometryTools.geometryToROI(it.union(separator), tissue.ROI.imagePlane) }
+    def liver = halvesGeometries.find { it != tumor && it != capsule }
+    return [liver, tumor, capsule].collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
 }
 
 double getDistance(double microns) {
@@ -165,6 +164,13 @@ void cleanupAutoAnnotations() {
     removeObjects(annotations.findAll { it.classifications.contains('Auto') }, false)
 }
 
-ROI diffRoi(ROI roi1, ROI roi2) {
-    return GeometryTools.geometryToROI(roi1.geometry.difference(roi2.geometry), roi1.imagePlane)
+
+ROI unionROI(ROI roi1, ROI roi2) {
+    if(roi2 == null){
+        return roi1
+    }
+    if(roi1 == null){
+        return roi2
+    }
+    return GeometryTools.geometryToROI(roi1.geometry.union(roi2.geometry), roi1.imagePlane)
 }
