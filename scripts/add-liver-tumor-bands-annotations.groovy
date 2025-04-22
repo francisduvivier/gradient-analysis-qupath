@@ -12,6 +12,8 @@ main()
 print('END: main')
 
 def main() {
+    List<Integer> liverBands = [100] * 6 + [500] * 5
+    List<Integer> tumorBands = [100] * 6 + [500] * 5
     cleanupAutoAnnotations()
     List<Tuple<PathObject>> tissuesWithLine = findTissueWithTumorLines()
     Integer coreIndex = 0
@@ -20,12 +22,12 @@ def main() {
         def (liver, tumor) = getSeparatedTissuePoints(tissue, tumorLine)
         List<PathObject> tissueAnnotations = []
         tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
-        def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liver, tumor, 6, 100)
+        def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liver, tumor, liverBands)
         tissueAnnotations.addAll(liverExpansionAnnotations)
         tissueAnnotations << getAnnotation(createCentralROI(tumor, biggestLiverExpansion), "${coreIndex}_tumor_central", makeRGB(0, 150, 0))
 
         tissueAnnotations << getAnnotation(tumor, "${coreIndex}_tumor", makeRGB(150, 150, 0))
-        def (biggestTumorExpansion, tumorExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_liver", tumor, liver, 4, 100)
+        def (biggestTumorExpansion, tumorExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_liver", tumor, liver, tumorBands)
         tissueAnnotations.addAll(tumorExpansionAnnotations)
         tissueAnnotations << getAnnotation(createCentralROI(liver, biggestTumorExpansion), "${coreIndex}_liver_central", makeRGB(0, 150, 0))
         addObjects(tissueAnnotations)
@@ -35,18 +37,20 @@ def main() {
 }
 
 
-def annotateHalfWithExpansions(String name, ROI startPolygon, ROI intersectingPolygon, int amount, int microns) {
-    double distance = getDistance(microns)
+def annotateHalfWithExpansions(String name, ROI startPolygon, ROI intersectingPolygon, List<Integer> bandsInMicrons) {
     def prevExpansion = startPolygon.geometry
     List<PathObject> newAnnotations = []
-    for (int i = 1; i <= amount; i++) {
-        def expansion = startPolygon.geometry.buffer(i * distance)
+    def totalMicrons = 0
+    for (int i = 1; i <= bandsInMicrons.size(); i++) {
+        totalMicrons += bandsInMicrons[i - 1]
+        def totalDistance = getDistance(totalMicrons)
+        def expansion = startPolygon.geometry.buffer(totalDistance)
         def expansionBand = expansion.difference(prevExpansion)
         prevExpansion = expansion
         def intersection = expansionBand.intersection(intersectingPolygon.geometry)
 
         def bandColor = makeRGB(20 * i, 40 * i, 200 - 30 * i)
-        newAnnotations << getAnnotation(GeometryTools.geometryToROI(intersection, startPolygon.imagePlane), "${name}_${i * microns}µm", bandColor)
+        newAnnotations << getAnnotation(GeometryTools.geometryToROI(intersection, startPolygon.imagePlane), "${name}_${totalMicrons}µm", bandColor)
     }
     return [prevExpansion, newAnnotations]
 }
