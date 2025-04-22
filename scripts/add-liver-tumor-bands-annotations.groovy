@@ -26,10 +26,10 @@ def main() {
         def liverWC = unionROI(liver, capsule)
         def tumorWC = unionROI(tumor, capsule)
         List<PathObject> tissueAnnotations = []
-        def (liverCapsule, tumorCapsule) = splitROIInHalves(capsule, liver, tumor)
 //        tissueAnnotations << getAnnotation(capsule, "${coreIndex}_whole_capsule", makeRGB(0, 150, 0))
-        tissueAnnotations << getAnnotation(tumorCapsule, "${coreIndex}_tumor_capsule", makeRGB(0, 150, 0))
-        tissueAnnotations << getAnnotation(liverCapsule, "${coreIndex}_liver_capsule", makeRGB(0, 150, 0))
+//        def (liverCapsule, tumorCapsule) = splitROIInHalves(capsule, liver, tumor)
+//        tissueAnnotations << getAnnotation(tumorCapsule, "${coreIndex}_tumor_capsule", makeRGB(0, 150, 0))
+//        tissueAnnotations << getAnnotation(liverCapsule, "${coreIndex}_liver_capsule", makeRGB(0, 150, 0))
         tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
         def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liverWC, tumorWC, liverBands)
         tissueAnnotations.addAll(liverExpansionAnnotations)
@@ -204,6 +204,7 @@ Geometry createMidlineIn(Geometry line1, Geometry line2, Geometry shapeThatShoul
     def factory = shapeThatShouldBeSplit.getFactory()
     def boundary = shapeThatShouldBeSplit.getBoundary()
 
+    // Get boundary intersection points
     def inter1 = line1.intersection(boundary)
     def inter2 = line2.intersection(boundary)
 
@@ -214,8 +215,84 @@ Geometry createMidlineIn(Geometry line1, Geometry line2, Geometry shapeThatShoul
     def A = inter1.getCoordinates()[0]
     def B = inter2.getCoordinates()[0]
 
-    // Compute the midpoint between the boundary intersections
-    def mid = new Coordinate((A.x + B.x) / 2.0, (A.y + B.y) / 2.0)
+    // Convert lines to coordinate arrays
+    def coords1 = line1.getCoordinates()
+    def coords2 = line2.getCoordinates()
 
-    return factory.createLineString([A, mid, B] as Coordinate[])
+    // Find starting points that are closest to each other
+    def start1 = coords1.min { it.distance(A) }
+    def start2 = coords2.min { it.distance(B) }
+
+    // Walk along both lines simultaneously to find corresponding points
+    def midPoints = []
+    def idx1 = coords1.findIndexOf {it === start1}
+    def idx2 = coords2.findIndexOf {it === start2}
+
+    // Determine walking directions
+    def dir1 = A.distance(coords1[0]) < A.distance(coords1[-1]) ? 1 : -1
+    def dir2 = B.distance(coords2[0]) < B.distance(coords2[-1]) ? 1 : -1
+
+    // Walk until we reach the end of either line
+    while (idx1 >= 0 && idx1 < coords1.size() && idx2 >= 0 && idx2 < coords2.size()) {
+        def p1 = coords1[idx1]
+        def p2 = coords2[idx2]
+
+        // Add midpoint
+        midPoints << new Coordinate((p1.x + p2.x)/2, (p1.y + p2.y)/2)
+
+        // Move forward along both lines
+        idx1 += dir1
+        idx2 += dir2
+
+        // Optional: Skip some points for efficiency if lines are very dense
+        if (coords1.size() > 100 || coords2.size() > 100) {
+            idx1 += (coords1.size()/50).toInteger()
+            idx2 += (coords2.size()/50).toInteger()
+        }
+    }
+
+    // Sort points by progression along the path
+    def allPoints = [A] + sortPointsAlongPath(midPoints) + [B]
+
+    // Create smooth path
+    def smoothedPath = smoothPath(allPoints, 3)
+
+    return factory.createLineString(smoothedPath as Coordinate[])
+}
+
+List<Coordinate> sortPointsAlongPath(List<Coordinate> points) {
+    if (points.size() <= 2) return points
+
+    def sorted = [points[0]]
+    def remaining = points[1..-1] as List
+
+    while (!remaining.isEmpty()) {
+        def last = sorted.last()
+        def closest = remaining.min { it.distance(last) }
+        sorted << closest
+        remaining.remove(closest)
+    }
+
+    return sorted
+}
+
+List<Coordinate> smoothPath(List<Coordinate> path, int iterations = 1) {
+    if (path.size() <= 2) return path
+
+    def smoothed = path.clone()
+
+    iterations.times {
+        def newPath = [smoothed[0]]
+        for (int i = 1; i < smoothed.size()-1; i++) {
+            // Stronger smoothing towards neighbors
+            newPath << new Coordinate(
+                    (smoothed[i-1].x * 0.4 + smoothed[i].x * 0.2 + smoothed[i+1].x * 0.4),
+                    (smoothed[i-1].y * 0.4 + smoothed[i].y * 0.2 + smoothed[i+1].y * 0.4)
+            )
+        }
+        newPath << smoothed[-1]
+        smoothed = newPath
+    }
+
+    return smoothed
 }
