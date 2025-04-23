@@ -4,6 +4,8 @@
 import groovy.transform.ImmutableOptions
 import org.locationtech.jts.geom.Coordinate
 import org.locationtech.jts.geom.Geometry
+import org.locationtech.jts.geom.LineString
+import org.locationtech.jts.linearref.LengthIndexedLine
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
 import qupath.lib.roi.interfaces.ROI
@@ -26,10 +28,12 @@ def main() {
         def liverWC = unionROI(liver, capsule)
         def tumorWC = unionROI(tumor, capsule)
         List<PathObject> tissueAnnotations = []
-//        tissueAnnotations << getAnnotation(capsule, "${coreIndex}_whole_capsule", makeRGB(0, 150, 0))
-//        def (liverCapsule, tumorCapsule) = splitROIInHalves(capsule, liver, tumor)
-//        tissueAnnotations << getAnnotation(tumorCapsule, "${coreIndex}_tumor_capsule", makeRGB(0, 150, 0))
-//        tissueAnnotations << getAnnotation(liverCapsule, "${coreIndex}_liver_capsule", makeRGB(0, 150, 0))
+        if (capsule != null) {
+            tissueAnnotations << getAnnotation(capsule, "${coreIndex}_whole_capsule", makeRGB(0, 150, 0))
+            def (liverCapsule, tumorCapsule) = splitROIInHalves(capsule, tissueAndLines.lines(), tumor)
+            tissueAnnotations << getAnnotation(tumorCapsule, "${coreIndex}_tumor_capsule", makeRGB(0, 150, 0))
+            tissueAnnotations << getAnnotation(liverCapsule, "${coreIndex}_liver_capsule", makeRGB(0, 150, 0))
+        }
         tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
         def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liverWC, tumorWC, liverBands)
         tissueAnnotations.addAll(liverExpansionAnnotations)
@@ -180,11 +184,12 @@ ROI unionROI(ROI roi1, ROI roi2) {
     return GeometryTools.geometryToROI(roi1.geometry.union(roi2.geometry), roi1.imagePlane)
 }
 
-Tuple<ROI> splitROIInHalves(ROI capsule, ROI liver, ROI tumor) {
+Tuple<ROI> splitROIInHalves(ROI capsule, Collection<PathObject> lines, ROI tumor) {
     def capsuleGeometry = capsule.geometry
     def tumorGeometry = tumor.geometry
-    def liverGeometry = liver.geometry
-    def midline = createMidlineString(capsuleGeometry, tumorGeometry, liverGeometry)
+    def tumorLine = lines[0].ROI.geometry.touches(tumor.geometry) ? lines[0] : lines[1]
+    def liverLine = lines[0] == tumorLine ? lines[1] : lines[0]
+    def midline = createMidlineString(liverLine.ROI.geometry, tumorLine.ROI.geometry)
     assert midline.intersects(capsuleGeometry)
     def (left, right) = GeometryTools.splitGeometryByLineStrings(capsuleGeometry, [midline])
     assert left != null
@@ -194,105 +199,31 @@ Tuple<ROI> splitROIInHalves(ROI capsule, ROI liver, ROI tumor) {
     return [liverCapsule, tumorCapsule].collect { GeometryTools.geometryToROI(it, capsule.imagePlane) }
 }
 
-Geometry createMidlineString(Geometry geometry, Geometry tumorGeometry, Geometry liverGeometry) {
-    def liverFacingWall = geometry.intersection(liverGeometry)
-    def tumorFacingWall = geometry.intersection(tumorGeometry)
-    return createMidlineIn(liverFacingWall, tumorFacingWall, geometry)
-}
-
-Geometry createMidlineIn(Geometry line1, Geometry line2, Geometry shapeThatShouldBeSplit) {
-    def factory = shapeThatShouldBeSplit.getFactory()
-    def boundary = shapeThatShouldBeSplit.getBoundary()
-
-    // Get boundary intersection points
-    def inter1 = line1.intersection(boundary)
-    def inter2 = line2.intersection(boundary)
-
-    if (inter1.isEmpty() || inter2.isEmpty()) {
-        throw new Error("Failed to find boundary intersections.")
+Geometry createMidlineString(Geometry line1, Geometry line2) {
+    // TODO implement this with bettery AI or human instead.
+    // Ensure both geometries are LineStrings
+    if (!(line1 instanceof LineString)) {
+        throw new IllegalArgumentException("line1 must be a LineString")
+    }
+    if (!(line2 instanceof LineString)) {
+        throw new IllegalArgumentException("line2 must be a LineString")
     }
 
-    def A = inter1.getCoordinates()[0]
-    def B = inter2.getCoordinates()[0]
+    def geomFactory = line1.getFactory()
+    def sampleCount = 20  // number of sample points along each line
+    def indexedLine1 = new LengthIndexedLine(line1)
+    def indexedLine2 = new LengthIndexedLine(line2)
 
-    // Convert lines to coordinate arrays
-    def coords1 = line1.getCoordinates()
-    def coords2 = line2.getCoordinates()
-
-    // Find starting points that are closest to each other
-    def start1 = coords1.min { it.distance(A) }
-    def start2 = coords2.min { it.distance(B) }
-
-    // Walk along both lines simultaneously to find corresponding points
-    def midPoints = []
-    def idx1 = coords1.findIndexOf {it === start1}
-    def idx2 = coords2.findIndexOf {it === start2}
-
-    // Determine walking directions
-    def dir1 = A.distance(coords1[0]) < A.distance(coords1[-1]) ? 1 : -1
-    def dir2 = B.distance(coords2[0]) < B.distance(coords2[-1]) ? 1 : -1
-
-    // Walk until we reach the end of either line
-    while (idx1 >= 0 && idx1 < coords1.size() && idx2 >= 0 && idx2 < coords2.size()) {
-        def p1 = coords1[idx1]
-        def p2 = coords2[idx2]
-
-        // Add midpoint
-        midPoints << new Coordinate((p1.x + p2.x)/2, (p1.y + p2.y)/2)
-
-        // Move forward along both lines
-        idx1 += dir1
-        idx2 += dir2
-
-        // Optional: Skip some points for efficiency if lines are very dense
-        if (coords1.size() > 100 || coords2.size() > 100) {
-            idx1 += (coords1.size()/50).toInteger()
-            idx2 += (coords2.size()/50).toInteger()
-        }
+    double length1 = line1.getLength()
+    double length2 = line2.getLength()
+    def midpoints = []
+    for (int i = 0; i <= sampleCount; i++) {
+        double index1 = (length1 * i) / sampleCount
+        double index2 = (length2 * i) / sampleCount
+        def p1 = indexedLine1.extractPoint(index1)
+        def p2 = indexedLine2.extractPoint(index2)
+        midpoints << new Coordinate((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0)
     }
-
-    // Sort points by progression along the path
-    def allPoints = [A] + sortPointsAlongPath(midPoints) + [B]
-
-    // Create smooth path
-    def smoothedPath = smoothPath(allPoints, 3)
-
-    return factory.createLineString(smoothedPath as Coordinate[])
+    return geomFactory.createLineString(midpoints as Coordinate[])
 }
 
-List<Coordinate> sortPointsAlongPath(List<Coordinate> points) {
-    if (points.size() <= 2) return points
-
-    def sorted = [points[0]]
-    def remaining = points[1..-1] as List
-
-    while (!remaining.isEmpty()) {
-        def last = sorted.last()
-        def closest = remaining.min { it.distance(last) }
-        sorted << closest
-        remaining.remove(closest)
-    }
-
-    return sorted
-}
-
-List<Coordinate> smoothPath(List<Coordinate> path, int iterations = 1) {
-    if (path.size() <= 2) return path
-
-    def smoothed = path.clone()
-
-    iterations.times {
-        def newPath = [smoothed[0]]
-        for (int i = 1; i < smoothed.size()-1; i++) {
-            // Stronger smoothing towards neighbors
-            newPath << new Coordinate(
-                    (smoothed[i-1].x * 0.4 + smoothed[i].x * 0.2 + smoothed[i+1].x * 0.4),
-                    (smoothed[i-1].y * 0.4 + smoothed[i].y * 0.2 + smoothed[i+1].y * 0.4)
-            )
-        }
-        newPath << smoothed[-1]
-        smoothed = newPath
-    }
-
-    return smoothed
-}
