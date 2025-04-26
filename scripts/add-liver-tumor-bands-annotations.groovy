@@ -134,14 +134,14 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
         def liver = halvesGeometries.find { it != tumor }
         return [liver, tumor].collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
     }
-    if (halvesGeometries.size() !== 3) {
-        throw new Error("Expected 2 or 3 halves, but got ${halvesGeometries.size()}")
+    if (halvesGeometries.size() < 3) {
+        throw new Error("Expected 2 or more halves, but got ${halvesGeometries.size()}")
     }
     def geometriesTouchingTumor = halvesGeometries.findAll { it.touches(tumor) }
-    if (geometriesTouchingTumor.size() != 1) {
-        throw new Error("Expected 1 geometry that touches the tumor geometry, but got ${geometriesTouchingTumor.size()}")
+    if (geometriesTouchingTumor.size() < 1) {
+        throw new Error("Expected 1 or more geometry that touches the tumor geometry, but got ${geometriesTouchingTumor.size()}")
     }
-    def (capsule) = geometriesTouchingTumor
+    def capsule = mergeGeometries(geometriesTouchingTumor)
 
     def liver = halvesGeometries.find { it != tumor && it != capsule }
     return [liver, tumor, capsule].collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
@@ -192,11 +192,10 @@ Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI t
     def liverLine = lines[0] == tumorLine ? lines[1] : lines[0]
     def midline = createMidlineString(liverLine.ROI.geometry, tumorLine.ROI.geometry)
     assert midline.intersects(capsuleGeometry)
-    def (left, right) = GeometryTools.splitGeometryByLineStrings(capsuleGeometry, [midline])
-    assert left != null
-    assert right != null
-    def tumorCapsule = left.touches(tumorGeometry) ? left : right
-    def liverCapsule = left === tumorCapsule ? right : left
+    def capsuleParts = GeometryTools.splitGeometryByLineStrings(capsuleGeometry, [midline])
+    assert capsuleParts.size() >= 2
+    def tumorCapsule = mergeGeometries(capsuleParts.findAll {it.touches(tumor.geometry)})
+    def liverCapsule = mergeGeometries(capsuleParts.findAll {!it.touches(tumor.geometry)})
     return [midline, liverCapsule, tumorCapsule].collect { GeometryTools.geometryToROI(it, capsule.imagePlane) }
 }
 
@@ -226,3 +225,13 @@ Geometry createMidlineString(Geometry line1, Geometry line2) {
     return geomFactory.createLineString(midpoints as Coordinate[])
 }
 
+Geometry mergeGeometries(List<Geometry> geometries) {
+    if (geometries.size() == 0) {
+        return null
+    }
+    def merged = geometries[0]
+    for (int i = 1; i < geometries.size(); i++) {
+        merged = merged.union(geometries[i])
+    }
+    return merged
+}
