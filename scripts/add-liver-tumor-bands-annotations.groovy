@@ -201,6 +201,7 @@ Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI t
 }
 
 Geometry createMidlineString(Geometry line1, Geometry line2) {
+    print('Creating midline string...')
     if (!(line1 instanceof LineString)) {
         throw new IllegalArgumentException("line1 must be a LineString")
     }
@@ -221,6 +222,7 @@ Geometry createMidlineString(Geometry line1, Geometry line2) {
         def p2 = extractClosestPoint(indexedLine2, p1, sampleCount * 2)
         midpoints << new Coordinate((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0)
     }
+    print('Finished Creating midline string...')
     return geomFactory.createLineString(midpoints as Coordinate[])
 }
 
