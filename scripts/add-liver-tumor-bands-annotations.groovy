@@ -214,27 +214,15 @@ Geometry createMidlineString(Geometry line1, Geometry line2) {
     def sampleCount = Math.max(line1.numPoints, line2.numPoints)
 
     double length1 = line1.getLength()
+    double length2 = line2.getLength()
     def midpoints = []
     for (int i = 0; i <= sampleCount; i++) {
         double index1 = (length1 * i) / sampleCount
+        double index2 = (length2 * i) / sampleCount
         def p1 = indexedLine1.extractPoint(index1)
-        def p2 = extractClosestPoint(indexedLine2, p1, sampleCount * 2)
+        def p2 = indexedLine2.extractPoint(index2)
         midpoints << new Coordinate((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0)
     }
     return geomFactory.createLineString(midpoints as Coordinate[])
 }
 
-Coordinate extractClosestPoint(LengthIndexedLine lengthIndexedLine, Coordinate point, int samples) {
-    double minDistance = Double.MAX_VALUE
-    Coordinate closestPoint = null
-    for (int i = 0; i < samples; i++) {
-        double index = (lengthIndexedLine.getEndIndex() / samples) * i
-        def pointOnline = lengthIndexedLine.extractPoint(index)
-        double distance = pointOnline.distance(point)
-        if (distance < minDistance) {
-            minDistance = distance
-            closestPoint = pointOnline
-        }
-    }
-    return closestPoint
-}
