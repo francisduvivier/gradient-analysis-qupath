@@ -29,10 +29,11 @@ def main() {
         def tumorWC = unionROI(tumor, capsule)
         List<PathObject> tissueAnnotations = []
         if (capsule != null) {
-            tissueAnnotations << getAnnotation(capsule, "${coreIndex}_whole_capsule", makeRGB(0, 150, 0))
-            def (liverCapsule, tumorCapsule) = splitROIInHalves(capsule, tissueAndLines.lines(), tumor)
-            tissueAnnotations << getAnnotation(tumorCapsule, "${coreIndex}_tumor_capsule", makeRGB(0, 150, 0))
-            tissueAnnotations << getAnnotation(liverCapsule, "${coreIndex}_liver_capsule", makeRGB(0, 150, 0))
+            tissueAnnotations << getAnnotation(capsule, "${coreIndex}_capsule_whole", makeRGB(0, 150, 0))
+            def (midLine, liverCapsule, tumorCapsule) = splitCapsuleInHalves(capsule, tissueAndLines.lines(), tumor)
+            tissueAnnotations << getAnnotation(midLine, "${coreIndex}_capsule_midline", makeRGB(0, 150, 0))
+            tissueAnnotations << getAnnotation(tumorCapsule, "${coreIndex}_capsule_tumor", makeRGB(0, 150, 0))
+            tissueAnnotations << getAnnotation(liverCapsule, "${coreIndex}_capsule_liver", makeRGB(0, 150, 0))
         }
         tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
         def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liverWC, tumorWC, liverBands)
@@ -184,7 +185,7 @@ ROI unionROI(ROI roi1, ROI roi2) {
     return GeometryTools.geometryToROI(roi1.geometry.union(roi2.geometry), roi1.imagePlane)
 }
 
-Tuple<ROI> splitROIInHalves(ROI capsule, Collection<PathObject> lines, ROI tumor) {
+Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI tumor) {
     def capsuleGeometry = capsule.geometry
     def tumorGeometry = tumor.geometry
     def tumorLine = lines[0].ROI.geometry.touches(tumor.geometry) ? lines[0] : lines[1]
@@ -196,12 +197,10 @@ Tuple<ROI> splitROIInHalves(ROI capsule, Collection<PathObject> lines, ROI tumor
     assert right != null
     def tumorCapsule = left.touches(tumorGeometry) ? left : right
     def liverCapsule = left === tumorCapsule ? right : left
-    return [liverCapsule, tumorCapsule].collect { GeometryTools.geometryToROI(it, capsule.imagePlane) }
+    return [midline, liverCapsule, tumorCapsule].collect { GeometryTools.geometryToROI(it, capsule.imagePlane) }
 }
 
 Geometry createMidlineString(Geometry line1, Geometry line2) {
-    // TODO implement this with bettery AI or human instead.
-    // Ensure both geometries are LineStrings
     if (!(line1 instanceof LineString)) {
         throw new IllegalArgumentException("line1 must be a LineString")
     }
