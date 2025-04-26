@@ -209,9 +209,9 @@ Geometry createMidlineString(Geometry line1, Geometry line2) {
     }
 
     def geomFactory = line1.getFactory()
-    def sampleCount = 20  // number of sample points along each line
     def indexedLine1 = new LengthIndexedLine(line1)
     def indexedLine2 = new LengthIndexedLine(line2)
+    def sampleCount = Math.max(line1.numPoints, line2.numPoints)
 
     double length1 = line1.getLength()
     double length2 = line2.getLength()
