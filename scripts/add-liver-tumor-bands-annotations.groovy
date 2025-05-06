@@ -43,7 +43,7 @@ def main() {
         def (biggestTumorExpansion, tumorExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_liver", tumorWC, liverWC, tumorBands)
         tissueAnnotations.addAll(tumorExpansionAnnotations)
         tissueAnnotations << getAnnotation(createCentralROI(liver, biggestTumorExpansion), "${coreIndex}_liver_central", makeRGB(0, 150, 0))
-        addObjects(tissueAnnotations)
+        addObjects(tissueAnnotations.findAll { it.ROI.isLine() || it.ROI.getArea() > 0 })
         coreIndex++
     }
 
