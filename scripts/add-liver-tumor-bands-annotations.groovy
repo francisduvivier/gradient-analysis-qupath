@@ -16,6 +16,10 @@ print('START: main')
 main()
 print('END: main')
 
+def REJECT_DIRTY_ANNOTATIONS() {
+    return false
+}
+
 def main() {
     List<Integer> liverBands = [100] * 6 + [500] * 5
     List<Integer> tumorBands = [100] * 6 + [500] * 5
@@ -130,22 +134,30 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
         throw new Error("No tumor geometry found in tissue [${tissue?.getID()}], please check the annotations")
     }
     if (tumorLines.size() == 1) {
-        if (halvesGeometries.size() != 2) {
-            addObjects(halvesGeometries.collect { getAnnotation(GeometryTools.geometryToROI(it, tissue.ROI.imagePlane), "00_maybe_problem", makeRGB(155, 155, 0)) })
-            throw new Error("Expected 2 halves, but got ${halvesGeometries.size()}, please check the 00_maybe_problem annotation, probably the smallest one is the issue")
+        if (halvesGeometries.size() !== 2) {
+            if (halvesGeometries.size() < 2 || REJECT_DIRTY_ANNOTATIONS()) {
+                addObjects(halvesGeometries.collect { getAnnotation(GeometryTools.geometryToROI(it, tissue.ROI.imagePlane), "00_maybe_problem", makeRGB(155, 155, 0)) })
+                throw new Error("Expected 2 halves, but got ${halvesGeometries.size()}, please check the 00_maybe_problem annotation, probably the smallest one is the issue")
+            } else {
+                print("WARNING: Expected 2 halves, but got ${halvesGeometries.size()}, this could give weird results, please check the annotations, setting REJECT_DIRTY_ANNOTATIONS to true can help with that.")
+            }
         }
         def liver = halvesGeometries.find { it != tumor }
         return [liver, tumor].collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
     }
 
     // We have more than 1 line, we need to find the capsule
-    if (halvesGeometries.size() !== 3 ) {
-        addObjects(halvesGeometries.collect { getAnnotation(GeometryTools.geometryToROI(it, tissue.ROI.imagePlane), "00_maybe_problem", makeRGB(155, 155, 0)) })
-        throw new Error("Expected 3 halves, but got ${halvesGeometries.size()}")
+    if (halvesGeometries.size() !== 3) {
+        if (halvesGeometries.size() < 3 || REJECT_DIRTY_ANNOTATIONS()) {
+            addObjects(halvesGeometries.collect { getAnnotation(GeometryTools.geometryToROI(it, tissue.ROI.imagePlane), "00_maybe_problem", makeRGB(155, 155, 0)) })
+            throw new Error("Expected 3 halves, but got ${halvesGeometries.size()}")
+        } else {
+            print("WARNING: Expected 3 halves, but got ${halvesGeometries.size()}, this could give weird results, please check the annotations, setting REJECT_DIRTY_ANNOTATIONS to true can help with that.")
+        }
     }
     def geometriesTouchingTumor = halvesGeometries.findAll { it.touches(tumor) }
     if (geometriesTouchingTumor.size() < 1) {
-        addObjects([tissue]+tumorLines.collect { getAnnotation(it.ROI, "00_maybe_problem", makeRGB(155, 155, 0)) })
+        addObjects([tissue] + tumorLines.collect { getAnnotation(it.ROI, "00_maybe_problem", makeRGB(155, 155, 0)) })
         throw new Error("Expected 1 or more geometry that touches the tumor geometry, but got ${geometriesTouchingTumor.size()}")
     }
     def capsule = mergeGeometries(geometriesTouchingTumor)
