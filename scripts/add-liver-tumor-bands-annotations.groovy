@@ -1,11 +1,9 @@
 //file:noinspection GrMethodMayBeStatic
 
-
 import groovy.transform.ImmutableOptions
 import org.locationtech.jts.geom.Coordinate
 import org.locationtech.jts.geom.Geometry
 import org.locationtech.jts.geom.LineString
-import org.locationtech.jts.geom.Point
 import org.locationtech.jts.linearref.LengthIndexedLine
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
@@ -131,10 +129,16 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     if (tumor == null) {
         throw new Error("No tumor geometry found in tissue [${tissue?.getID()}], please check the annotations")
     }
-    if (halvesGeometries.size() == 2) {
+    if (tumorLines.size() == 1) {
+        if (halvesGeometries.size() != 2) {
+            addObjects(halvesGeometries.collect { getAnnotation(GeometryTools.geometryToROI(it, tissue.ROI.imagePlane), "00_maybe_problem", makeRGB(155, 155, 0)) })
+            throw new Error("Expected 2 halves, but got ${halvesGeometries.size()}, please check the 00_maybe_problem annotation, probably the smallest one is the issue")
+        }
         def liver = halvesGeometries.find { it != tumor }
         return [liver, tumor].collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
     }
+
+    // We have more than 2 halves, we need to find the capsule
     if (halvesGeometries.size() < 3) {
         throw new Error("Expected 2 or more halves, but got ${halvesGeometries.size()}")
     }
