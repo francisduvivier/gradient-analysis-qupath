@@ -5,6 +5,7 @@ import groovy.transform.ImmutableOptions
 import org.locationtech.jts.geom.Coordinate
 import org.locationtech.jts.geom.Geometry
 import org.locationtech.jts.geom.LineString
+import org.locationtech.jts.geom.Point
 import org.locationtech.jts.linearref.LengthIndexedLine
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
@@ -187,15 +188,17 @@ ROI unionROI(ROI roi1, ROI roi2) {
 
 Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI tumor) {
     def capsuleGeometry = capsule.geometry
-    def tumorGeometry = tumor.geometry
     def tumorLine = lines[0].ROI.geometry.touches(tumor.geometry) ? lines[0] : lines[1]
     def liverLine = lines[0] == tumorLine ? lines[1] : lines[0]
     def midline = createMidlineString(liverLine.ROI.geometry, tumorLine.ROI.geometry)
+//    addObject(getAnnotation(GeometryTools.geometryToROI(midline, getAnnotationObjects()[0].ROI.imagePlane), "midline", makeRGB(255, 0, 0)))
     assert midline.intersects(capsuleGeometry)
     def capsuleParts = GeometryTools.splitGeometryByLineStrings(capsuleGeometry, [midline])
     assert capsuleParts.size() >= 2
-    def tumorCapsule = mergeGeometries(capsuleParts.findAll {it.touches(tumor.geometry)})
-    def liverCapsule = mergeGeometries(capsuleParts.findAll {!it.touches(tumor.geometry)})
+    def tumorCapsule = mergeGeometries(capsuleParts.findAll { it.touches(tumor.geometry) })
+    assert tumorCapsule != null
+    def liverCapsule = mergeGeometries(capsuleParts.findAll { !it.touches(tumor.geometry) })
+    assert liverCapsule != null
     return [midline, liverCapsule, tumorCapsule].collect { GeometryTools.geometryToROI(it, capsule.imagePlane) }
 }
 
@@ -208,21 +211,55 @@ Geometry createMidlineString(Geometry line1, Geometry line2) {
     }
 
     def geomFactory = line1.getFactory()
-    def indexedLine1 = new LengthIndexedLine(line1)
-    def indexedLine2 = new LengthIndexedLine(line2)
-    def sampleCount = Math.max(line1.numPoints, line2.numPoints)
+    // First, we create straight line between the start and end of a line that is between the midpoints between the start and end of the two lines
 
-    double length1 = line1.getLength()
-    double length2 = line2.getLength()
-    def midpoints = []
-    for (int i = 0; i <= sampleCount; i++) {
-        double index1 = (length1 * i) / sampleCount
-        double index2 = (length2 * i) / sampleCount
-        def p1 = indexedLine1.extractPoint(index1)
-        def p2 = indexedLine2.extractPoint(index2)
-        midpoints << new Coordinate((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0)
+    def line2StartPoint = line2.getStartPoint()
+    def line2EndPoint = line2.getEndPoint()
+    def refLineStart = new Coordinate((line1.getStartPoint().x + line2StartPoint.x) / 2.0, (line1.getStartPoint().y + line2StartPoint.y) / 2.0)
+    def refLineEnd = new Coordinate((line1.getEndPoint().x + line2EndPoint.x) / 2.0, (line1.getEndPoint().y + line2EndPoint.y) / 2.0)
+    def referenceLine = geomFactory.createLineString([refLineStart, refLineEnd] as Coordinate[])
+    def xDirRef = 1
+    def yDirRef = (refLineStart.y - refLineEnd.y) / (refLineStart.x - refLineEnd.x)
+    def xDirOrthogonal = -yDirRef
+    def yDirOrthogonal = xDirRef
+    def refLineLength = referenceLine.getLength()
+
+    // Then we create a LengthIndexedLine from the reference line
+
+    def lengthIndexedRefLine = new LengthIndexedLine(referenceLine)
+    def MAX_POWER = 5
+    for (int midLineResolutionPower = 0; midLineResolutionPower < MAX_POWER; midLineResolutionPower++) {
+        def sampleCount = Math.max(line1.numPoints, line2.numPoints) * (2 ^ midLineResolutionPower)
+        print('Trying to create a capsule midline with resolution power ' + midLineResolutionPower + ', sampleCount ' + sampleCount)
+        def midpoints = [refLineStart]
+
+        // We loop over the sampleCount,
+        for (int i = 0; i <= sampleCount; i++) {
+            def lengthIndex = i * (refLineLength / sampleCount)
+            def referencePoint = lengthIndexedRefLine.extractPoint(lengthIndex)
+            // We find the intersection between a line going through the reference point and the line2 and that is orthogonal to the reference line
+            def firstOrthStart = new Coordinate(referencePoint.x - xDirOrthogonal * refLineLength / 2, referencePoint.y - yDirOrthogonal * refLineLength / 2)
+            def firstOrthEnd = new Coordinate(referencePoint.x + xDirOrthogonal * refLineLength / 2, referencePoint.y + yDirOrthogonal * refLineLength / 2)
+            def orthogonalLineThroughReference = geomFactory.createLineString([firstOrthStart, firstOrthEnd] as Coordinate[])
+            def p1 = line1.intersection(orthogonalLineThroughReference)
+            def p2 = line2.intersection(orthogonalLineThroughReference)
+            if (p1 == null || p2 == null || p1.isEmpty() || p2.isEmpty()) {
+                // This is the case of orthogonal line on the edges that is not intersecting one of the 2 lines, this is normal
+//                print('Skipping point ' + i + ' of ' + sampleCount + ', no intersection found')
+                continue
+            }
+            // Calculate the midpoint
+            midpoints << new Coordinate((p1.centroid.x + p2.centroid.x) / 2.0, (p1.centroid.y + p2.centroid.y) / 2.0)
+        }
+        midpoints << refLineEnd
+
+        def midLine = geomFactory.createLineString(midpoints as Coordinate[])
+        if (!midLine.intersects(line1) && !midLine.intersects(line2)) {
+            return midLine
+        }
+        // If the midline intersects the lines, we need to try again with a higher resolution
     }
-    return geomFactory.createLineString(midpoints as Coordinate[])
+    throw new Error("Could not find a midline between the two lines that is not intersecting them")
 }
 
 Geometry mergeGeometries(List<Geometry> geometries) {
