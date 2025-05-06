@@ -138,12 +138,14 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
         return [liver, tumor].collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
     }
 
-    // We have more than 2 halves, we need to find the capsule
-    if (halvesGeometries.size() < 3) {
-        throw new Error("Expected 2 or more halves, but got ${halvesGeometries.size()}")
+    // We have more than 1 line, we need to find the capsule
+    if (halvesGeometries.size() !== 3 ) {
+        addObjects(halvesGeometries.collect { getAnnotation(GeometryTools.geometryToROI(it, tissue.ROI.imagePlane), "00_maybe_problem", makeRGB(155, 155, 0)) })
+        throw new Error("Expected 3 halves, but got ${halvesGeometries.size()}")
     }
     def geometriesTouchingTumor = halvesGeometries.findAll { it.touches(tumor) }
     if (geometriesTouchingTumor.size() < 1) {
+        addObjects([tissue]+tumorLines.collect { getAnnotation(it.ROI, "00_maybe_problem", makeRGB(155, 155, 0)) })
         throw new Error("Expected 1 or more geometry that touches the tumor geometry, but got ${geometriesTouchingTumor.size()}")
     }
     def capsule = mergeGeometries(geometriesTouchingTumor)
