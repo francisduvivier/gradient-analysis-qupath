@@ -167,6 +167,8 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     return [liver, tumor, capsule].collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
 }
 
+def ALLOW_NO_CALIBRATION() { return false }
+
 double getDistance(double microns) {
     def imageData = getCurrentImageData()
     def server = imageData.getServer()
@@ -174,6 +176,14 @@ double getDistance(double microns) {
     def cal = server.getPixelCalibration()
     if (!cal.hasPixelSizeMicrons()) {
         print 'We need the pixel size information here!'
+        print 'cal.getPixelWidth() ' + cal.getPixelWidth()
+        print 'cal.getPixelWidthMicrons() ' + cal.getPixelWidthMicrons()
+        print 'cal.getPixelWidthUnit(): ' + cal.getPixelWidthUnit()
+        print 'cal.getAveragedPixelSizeMicrons(): ' + cal.getAveragedPixelSizeMicrons()
+        if (cal.getPixelWidthUnit() == 'px' && ALLOW_NO_CALIBRATION()) {
+            print 'Warning!!! Going through with pixels instead of microns for debugging purposes'
+            return microns / cal.getAveragedPixelSize()
+        }
         throw new RuntimeException("We need the pixel size information here!")
     }
     return microns / cal.getAveragedPixelSizeMicrons()
@@ -237,7 +247,7 @@ Geometry createMidlineString(Geometry line1, Geometry line2) {
 
     def line1StartPoint = line1.getStartPoint()
     def line1EndPoint = line1.getEndPoint()
-    if(line2StartPoint.distance(line1StartPoint) > line2EndPoint.distance(line1StartPoint)){
+    if (line2StartPoint.distance(line1StartPoint) > line2EndPoint.distance(line1StartPoint)) {
         line2StartPoint = line2EndPoint
         line2EndPoint = line2.getStartPoint()
     }
