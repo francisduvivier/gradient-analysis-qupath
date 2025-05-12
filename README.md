@@ -25,3 +25,6 @@ So in this case that the script detects 2 lines going through a tissue annotatio
 - It will draw a line annotation through the middle of the capsule, trying to divide the capsule into 2 parts.
 - It will add annotations for each half of the capsule.
 - The script will take into account the capsule for the expansion bands mentioned above.
+
+## Development
+To make script development easier, we use Intellij IDE and we have configured the groovy SDK, and have set up a reference to the qupath libraries.
