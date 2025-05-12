@@ -26,5 +26,9 @@ So in this case that the script detects 2 lines going through a tissue annotatio
 - It will add annotations for each half of the capsule.
 - The script will take into account the capsule for the expansion bands mentioned above.
 
+#### Difficulties
+The script has known difficulties with cases of an annotation where part of it are completely disconnected. Also if a part gets disconnected after the line splitting, this can cause problems.
+To somewhat remedy this, we have added "00_ignored" annotations for these parts to indicate which parts of the tissue has been ignored.
+
 ## Development
 To make script development easier, we use Intellij IDE and we have configured the groovy SDK, and have set up a reference to the qupath libraries.

@@ -130,7 +130,7 @@ PathObject getAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255,
 Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     def (tissue, tumorLines) = [tissueAndLines.tissue(), tissueAndLines.lines()]
     def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, tumorLines.collect { it.ROI.geometry })
-    def tumor = halvesGeometries.find { isTumor(it) }
+    def tumor = halvesGeometries.findAll { isTumor(it) }.sort { it.area }.last
     if (tumor == null) {
         throw new Error("No annotation found with classification `Tumor` within the bounds of tissue [${tissue?.getID()}], please add one manually or move the tissue annotation or remove the line annotation through it")
     }
@@ -143,7 +143,11 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
                 print("WARNING: Expected 2 halves, but got ${halvesGeometries.size()}, this could give weird results, please check the annotations, setting REJECT_DIRTY_ANNOTATIONS to true can help with that.")
             }
         }
-        def liver = halvesGeometries.find { it != tumor }
+        def liver = halvesGeometries.findAll() { !isTumor(it) }.sort { it.area }.last
+
+        def ignoredGeometries = halvesGeometries.findAll { ![liver, tumor].contains(it) }
+        annotateIgnoredGeometries(ignoredGeometries, tissue)
+
         return [liver, tumor].collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
     }
 
@@ -156,15 +160,22 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
             print("WARNING: Expected 3 halves, but got ${halvesGeometries.size()}, this could give weird results, please check the annotations, setting REJECT_DIRTY_ANNOTATIONS to true can help with that.")
         }
     }
-    def geometriesTouchingTumor = halvesGeometries.findAll { it.touches(tumor) }
-    if (geometriesTouchingTumor.size() < 1) {
+    def capsuleGeometries = halvesGeometries.findAll { it.touches(tumor) }
+    if (capsuleGeometries.size() < 1) {
         addObjects([tissue] + tumorLines.collect { getAnnotation(it.ROI, "00_maybe_problem", makeRGB(155, 155, 0)) })
-        throw new Error("Expected 1 or more geometry that touches the tumor geometry, but got ${geometriesTouchingTumor.size()}")
+        throw new Error("Expected 1 or more geometry that touches the tumor geometry, but got ${capsuleGeometries.size()}")
     }
-    def capsule = mergeGeometries(geometriesTouchingTumor)
+    def capsule = mergeGeometries(capsuleGeometries)
 
-    def liver = halvesGeometries.find { it != tumor && it != capsule }
+    def liver = halvesGeometries.findAll { !isTumor(it) && !capsuleGeometries.contains(it) }.sort { it.area }.last
+    def ignoredGeometries = halvesGeometries.findAll {!([liver, tumor]+capsuleGeometries).contains(it)}
+    annotateIgnoredGeometries(ignoredGeometries, tissue)
     return [liver, tumor, capsule].collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
+}
+
+void annotateIgnoredGeometries(List<Geometry> ignoredGeometries, tissue) {
+    def annotations = ignoredGeometries.collect { getAnnotation(GeometryTools.geometryToROI(it, tissue.ROI.imagePlane), "00_ignored", makeRGB(200, 0, 100)) }
+    addObjects(annotations.findAll { it.ROI.isLine() || it.ROI.getArea() > 0 })
 }
 
 def ALLOW_NO_CALIBRATION() { return false }
