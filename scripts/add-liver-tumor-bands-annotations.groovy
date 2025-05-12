@@ -4,22 +4,17 @@ import groovy.transform.ImmutableOptions
 import org.locationtech.jts.geom.Coordinate
 import org.locationtech.jts.geom.Geometry
 import org.locationtech.jts.geom.LineString
-import org.locationtech.jts.geom.Point
 import org.locationtech.jts.linearref.LengthIndexedLine
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
 import qupath.lib.roi.interfaces.ROI
 import qupath.lib.roi.GeometryTools
 
-import static qupath.lib.gui.scripting.QPEx.*
-
 print('START: main')
 main()
 print('END: main')
 
-def REJECT_DIRTY_ANNOTATIONS() {
-    return false
-}
+def REJECT_DIRTY_ANNOTATIONS() { return false }
 
 def main() {
     List<Integer> liverBands = [100] * 6 + [500] * 5
@@ -168,7 +163,7 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     def capsule = mergeGeometries(capsuleGeometries)
 
     def liver = halvesGeometries.findAll { !isTumor(it) && !capsuleGeometries.contains(it) }.sort { it.area }.last
-    def ignoredGeometries = halvesGeometries.findAll {!([liver, tumor]+capsuleGeometries).contains(it)}
+    def ignoredGeometries = halvesGeometries.findAll { !([liver, tumor] + capsuleGeometries).contains(it) }
     annotateIgnoredGeometries(ignoredGeometries, tissue)
     return [liver, tumor, capsule].collect { GeometryTools.geometryToROI(it, tissue.ROI.imagePlane) }
 }
