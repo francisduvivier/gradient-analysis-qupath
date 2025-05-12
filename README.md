@@ -1,6 +1,10 @@
 # Qupath helper scripts for comet tissue scan analysis
 This project contains some scripts to help with tissue analysis in qupath.
 
+## How to use the scripts
+These scripts are to be used with an image with the required annotations opened in the qupath application and then using the script from the `Automate` menu.
+See https://qupath.readthedocs.io/en/stable/docs/scripting/overview.html#custom-scripts for some more info.
+
 ## Scripts in this project
 ### [add-liver-tumor-bands-annotations.groovy](add-liver-tumor-bands-annotations.groovy)
 
