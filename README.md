@@ -35,4 +35,5 @@ The script has known difficulties with cases of an annotation where part of it a
 To somewhat remedy this, we have added "00_ignored" annotations for these parts to indicate which parts of the tissue has been ignored.
 
 ## Development
-To make script development easier, we use Intellij IDE and we have configured the groovy SDK, and have set up a reference to the qupath libraries.
+To make script development easier, we use IntelliJ IDE and we have set the qupath app dir as library in the IDE module settings.
+The app dir path in case of running qupath from the [repository](https://github.com/qupath/qupath) looks like this: `qupath/build/dist/QuPath-0.6.0-rc5-arm64.app/Contents/app`.
