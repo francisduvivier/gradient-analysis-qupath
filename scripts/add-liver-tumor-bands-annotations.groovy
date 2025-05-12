@@ -4,6 +4,7 @@ import groovy.transform.ImmutableOptions
 import org.locationtech.jts.geom.Coordinate
 import org.locationtech.jts.geom.Geometry
 import org.locationtech.jts.geom.LineString
+import org.locationtech.jts.geom.Point
 import org.locationtech.jts.linearref.LengthIndexedLine
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
@@ -131,7 +132,7 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, tumorLines.collect { it.ROI.geometry })
     def tumor = halvesGeometries.find { isTumor(it) }
     if (tumor == null) {
-        throw new Error("No tumor geometry found in tissue [${tissue?.getID()}], please check the annotations")
+        throw new Error("No annotation found with classification `Tumor` within the bounds of tissue [${tissue?.getID()}], please add one manually or move the tissue annotation or remove the line annotation through it")
     }
     if (tumorLines.size() == 1) {
         if (halvesGeometries.size() !== 2) {
@@ -233,8 +234,15 @@ Geometry createMidlineString(Geometry line1, Geometry line2) {
 
     def line2StartPoint = line2.getStartPoint()
     def line2EndPoint = line2.getEndPoint()
-    def refLineStart = new Coordinate((line1.getStartPoint().x + line2StartPoint.x) / 2.0, (line1.getStartPoint().y + line2StartPoint.y) / 2.0)
-    def refLineEnd = new Coordinate((line1.getEndPoint().x + line2EndPoint.x) / 2.0, (line1.getEndPoint().y + line2EndPoint.y) / 2.0)
+
+    def line1StartPoint = line1.getStartPoint()
+    def line1EndPoint = line1.getEndPoint()
+    if(line2StartPoint.distance(line1StartPoint) > line2EndPoint.distance(line1StartPoint)){
+        line2StartPoint = line2EndPoint
+        line2EndPoint = line2.getStartPoint()
+    }
+    def refLineStart = new Coordinate((line1StartPoint.x + line2StartPoint.x) / 2.0, (line1StartPoint.y + line2StartPoint.y) / 2.0)
+    def refLineEnd = new Coordinate((line1EndPoint.x + line2EndPoint.x) / 2.0, (line1EndPoint.y + line2EndPoint.y) / 2.0)
     def referenceLine = geomFactory.createLineString([refLineStart, refLineEnd] as Coordinate[])
     def xDirRef = 1
     def yDirRef = (refLineStart.y - refLineEnd.y) / (refLineStart.x - refLineEnd.x)
