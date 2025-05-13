@@ -17,8 +17,8 @@ print('END: main')
 def REJECT_DIRTY_ANNOTATIONS() { return false }
 
 def main() {
-    List<Integer> liverBands = [100] * 6 + [500] * 5
-    List<Integer> tumorBands = [100] * 6 + [500] * 5
+    List<Integer> liverBands = [100] * 5 + [500] * 5
+    List<Integer> tumorBands = [100] * 5 + [500] * 5
     cleanupAutoAnnotations()
     List<TissueWithLines> tissuesWithLine = findTissueWithTumorLines()
     Integer coreIndex = 0
