@@ -1,6 +1,9 @@
 # Qupath helper scripts for comet tissue scan analysis
 This project contains some scripts to help with tissue analysis in qupath.
 
+## Citing this work
+Please check [CITATION.cff](CITATION.cff) for citing information in case you use this repository in your research.
+
 ## How to use the scripts
 These scripts are to be used with an image with the required annotations opened in the qupath application and then using the script from the `Automate` menu.
 See https://qupath.readthedocs.io/en/stable/docs/scripting/overview.html#custom-scripts for some more info.
