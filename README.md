@@ -6,7 +6,7 @@ These scripts are to be used with an image with the required annotations opened 
 See https://qupath.readthedocs.io/en/stable/docs/scripting/overview.html#custom-scripts for some more info.
 
 ## Scripts in this project
-### [add-liver-tumor-bands-annotations.groovy](add-liver-tumor-bands-annotations.groovy)
+### [scripts/add-liver-tumor-bands-annotations.groovy](scripts/add-liver-tumor-bands-annotations.groovy)
 
 #### Basic workings of the script
 This script does the following in the case of no capsule:
