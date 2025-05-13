@@ -7,5 +7,5 @@ authors:
     affiliation: No affiliation, University of Antwerp/ZAS 
 date-released: 2025-05-13
 version: 0.1.0
-repository-code: https://github.com/francisduvivier/gradient-analysis-qupath
+repository-code: https://github.com/francisduvivier/image-analysis-qupath
 license: MIT
