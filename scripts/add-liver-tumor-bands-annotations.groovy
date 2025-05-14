@@ -23,30 +23,34 @@ def main() {
     List<TissueWithLines> tissuesWithLine = findTissueWithTumorLines()
     Integer coreIndex = 0
     for (TissueWithLines tissueAndLines : tissuesWithLine) {
-        def (liver, tumor, capsule) = getSeparatedTissueParts(tissueAndLines)
-        def liverWC = unionROI(liver, capsule)
-        def tumorWC = unionROI(tumor, capsule)
-        List<PathObject> tissueAnnotations = []
-        if (capsule != null) {
-            tissueAnnotations << getAnnotation(capsule, "${coreIndex}_capsule_whole", makeRGB(0, 150, 0))
-            def (midLine, liverCapsule, tumorCapsule) = splitCapsuleInHalves(capsule, tissueAndLines.lines(), tumor)
-            tissueAnnotations << getAnnotation(midLine, "${coreIndex}_capsule_midline", makeRGB(0, 150, 0))
-            tissueAnnotations << getAnnotation(tumorCapsule, "${coreIndex}_capsule_tumor", makeRGB(0, 150, 0))
-            tissueAnnotations << getAnnotation(liverCapsule, "${coreIndex}_capsule_liver", makeRGB(0, 150, 0))
-        }
-        tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
-        def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liverWC, tumorWC, liverBands)
-        tissueAnnotations.addAll(liverExpansionAnnotations)
-        tissueAnnotations << getAnnotation(createCentralROI(tumor, biggestLiverExpansion), "${coreIndex}_tumor_central", makeRGB(0, 150, 0))
-
-        tissueAnnotations << getAnnotation(tumor, "${coreIndex}_tumor", makeRGB(150, 150, 0))
-        def (biggestTumorExpansion, tumorExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_liver", tumorWC, liverWC, tumorBands)
-        tissueAnnotations.addAll(tumorExpansionAnnotations)
-        tissueAnnotations << getAnnotation(createCentralROI(liver, biggestTumorExpansion), "${coreIndex}_liver_central", makeRGB(0, 150, 0))
-        addObjects(tissueAnnotations.findAll { it.ROI.isLine() || it.ROI.getArea() > 0 })
+        createGradientAnnotations(tissueAndLines, coreIndex, liverBands, tumorBands)
         coreIndex++
     }
 
+}
+
+def createGradientAnnotations(TissueWithLines tissueAndLines, int coreIndex, List<Integer> liverBands, List<Integer> tumorBands) {
+    def (liver, tumor, capsule) = getSeparatedTissueParts(tissueAndLines)
+    def liverWC = unionROI(liver, capsule)
+    def tumorWC = unionROI(tumor, capsule)
+    List<PathObject> tissueAnnotations = []
+    if (capsule != null) {
+        tissueAnnotations << getAnnotation(capsule, "${coreIndex}_capsule_whole", makeRGB(0, 150, 0))
+        def (midLine, liverCapsule, tumorCapsule) = splitCapsuleInHalves(capsule, tissueAndLines.lines(), tumor)
+        tissueAnnotations << getAnnotation(midLine, "${coreIndex}_capsule_midline", makeRGB(0, 150, 0))
+        tissueAnnotations << getAnnotation(tumorCapsule, "${coreIndex}_capsule_tumor", makeRGB(0, 150, 0))
+        tissueAnnotations << getAnnotation(liverCapsule, "${coreIndex}_capsule_liver", makeRGB(0, 150, 0))
+    }
+    tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
+    def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liverWC, tumorWC, liverBands)
+    tissueAnnotations.addAll(liverExpansionAnnotations)
+    tissueAnnotations << getAnnotation(createCentralROI(tumor, biggestLiverExpansion), "${coreIndex}_tumor_central", makeRGB(0, 150, 0))
+
+    tissueAnnotations << getAnnotation(tumor, "${coreIndex}_tumor", makeRGB(150, 150, 0))
+    def (biggestTumorExpansion, tumorExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_liver", tumorWC, liverWC, tumorBands)
+    tissueAnnotations.addAll(tumorExpansionAnnotations)
+    tissueAnnotations << getAnnotation(createCentralROI(liver, biggestTumorExpansion), "${coreIndex}_liver_central", makeRGB(0, 150, 0))
+    addObjects(tissueAnnotations.findAll { it.ROI.isLine() || it.ROI.getArea() > 0 })
 }
 
 
@@ -126,7 +130,7 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     def (tissue, tumorLines) = [tissueAndLines.tissue(), tissueAndLines.lines()]
     def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, tumorLines.collect { it.ROI.geometry })
     def tumors = halvesGeometries.findAll { isTumor(it) }.sort { it.area }
-    
+
     if (tumors.size() === 0) {
         addObjects(halvesGeometries.collect { getAnnotation(GeometryTools.geometryToROI(it, tissue.ROI.imagePlane), "00_debug_tissue_without_tumor_halves", makeRGB(255, 50, 50)) })
         throw new RuntimeException("No `Tumor` annotation found within the bounds of tissue [${tissue?.getID()}], please add an annotation with `Tumor` classification manually within one the tissue somewhere.")
@@ -229,23 +233,23 @@ Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI t
     def tumorLine = lines[0].ROI.geometry.touches(tumor.geometry) ? lines[0] : lines[1]
     def liverLine = lines[0] == tumorLine ? lines[1] : lines[0]
     def midline = createMidlineString(liverLine.ROI.geometry, tumorLine.ROI.geometry)
-    
-    if(!midline.intersects(capsuleGeometry)){
+
+    if (!midline.intersects(capsuleGeometry)) {
         addDebugAnnotations(tumorLine, liverLine, midline, capsule)
         throw new RuntimeException('Expected (midline.intersects(capsuleGeometry))')
     }
     def capsuleParts = GeometryTools.splitGeometryByLineStrings(capsuleGeometry, [midline])
-    if(capsuleParts.size() < 2){
+    if (capsuleParts.size() < 2) {
         addDebugAnnotations(tumorLine, liverLine, midline, capsule)
         throw new RuntimeException('Expected (capsuleParts.size() >= 2)')
     }
     def tumorCapsule = mergeGeometries(capsuleParts.findAll { it.touches(tumor.geometry) })
-    if(tumorCapsule == null){
+    if (tumorCapsule == null) {
         addDebugAnnotations(tumorLine, liverLine, midline, capsule)
         throw new RuntimeException('Expected (tumorCapsule != null)')
     }
     def liverCapsule = mergeGeometries(capsuleParts.findAll { !it.touches(tumor.geometry) })
-    if(liverCapsule == null){
+    if (liverCapsule == null) {
         addDebugAnnotations(tumorLine, liverLine, midline, capsule)
         throw new RuntimeException('Expected (liverCapsule != null)')
     }
