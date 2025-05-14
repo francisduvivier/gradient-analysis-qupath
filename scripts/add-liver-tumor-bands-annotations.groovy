@@ -102,7 +102,7 @@ Collection<PathObject> findLinesForTissue(Collection<PathObject> annotations, Pa
     } else if (lines.size() == 2) {
         print "Found tumor and liver line for tissue: [${tissue?.getID()}]"
     } else {
-        throw new Error("More than 2 line annotations found for tissue [${tissue?.getID()}]")
+        throw new RuntimeException("More than 2 line annotations found for tissue [${tissue?.getID()}]")
     }
     return lines
 }
@@ -125,15 +125,18 @@ PathObject getAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255,
 Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     def (tissue, tumorLines) = [tissueAndLines.tissue(), tissueAndLines.lines()]
     def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, tumorLines.collect { it.ROI.geometry })
-    def tumor = halvesGeometries.findAll { isTumor(it) }.sort { it.area }.last
-    if (tumor == null) {
-        throw new Error("No annotation found with classification `Tumor` within the bounds of tissue [${tissue?.getID()}], please add one manually or move the tissue annotation or remove the line annotation through it")
+    def tumors = halvesGeometries.findAll { isTumor(it) }.sort { it.area }
+    
+    if (tumors.size() === 0) {
+        addObjects(halvesGeometries.collect { getAnnotation(GeometryTools.geometryToROI(it, tissue.ROI.imagePlane), "00_debug_tissue_without_tumor_halves", makeRGB(255, 50, 50)) })
+        throw new RuntimeException("No `Tumor` annotation found within the bounds of tissue [${tissue?.getID()}], please add an annotation with `Tumor` classification manually within one the tissue somewhere.")
     }
+    def tumor = tumors.last
     if (tumorLines.size() == 1) {
         if (halvesGeometries.size() !== 2) {
             if (halvesGeometries.size() < 2 || REJECT_DIRTY_ANNOTATIONS()) {
-                addObjects(halvesGeometries.collect { getAnnotation(GeometryTools.geometryToROI(it, tissue.ROI.imagePlane), "00_maybe_problem", makeRGB(155, 155, 0)) })
-                throw new Error("Expected 2 halves, but got ${halvesGeometries.size()}, please check the 00_maybe_problem annotation, probably the smallest one is the issue")
+                addObjects(halvesGeometries.collect { getAnnotation(GeometryTools.geometryToROI(it, tissue.ROI.imagePlane), "00_debug", makeRGB(255, 50, 50)) })
+                throw new RuntimeException("Expected 2 halves, but got ${halvesGeometries.size()}, please check the 00_debug annotation, probably the smallest one is the issue")
             } else {
                 print("WARNING: Expected 2 halves, but got ${halvesGeometries.size()}, this could give weird results, please check the annotations, setting REJECT_DIRTY_ANNOTATIONS to true can help with that.")
             }
@@ -149,16 +152,16 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     // We have more than 1 line, we need to find the capsule
     if (halvesGeometries.size() !== 3) {
         if (halvesGeometries.size() < 3 || REJECT_DIRTY_ANNOTATIONS()) {
-            addObjects(halvesGeometries.collect { getAnnotation(GeometryTools.geometryToROI(it, tissue.ROI.imagePlane), "00_maybe_problem", makeRGB(155, 155, 0)) })
-            throw new Error("Expected 3 halves, but got ${halvesGeometries.size()}")
+            addObjects(halvesGeometries.collect { getAnnotation(GeometryTools.geometryToROI(it, tissue.ROI.imagePlane), "00_debug", makeRGB(255, 50, 50)) })
+            throw new RuntimeException("Expected 3 halves, but got ${halvesGeometries.size()}")
         } else {
             print("WARNING: Expected 3 halves, but got ${halvesGeometries.size()}, this could give weird results, please check the annotations, setting REJECT_DIRTY_ANNOTATIONS to true can help with that.")
         }
     }
     def capsuleGeometries = halvesGeometries.findAll { it.touches(tumor) }
     if (capsuleGeometries.size() < 1) {
-        addObjects([tissue] + tumorLines.collect { getAnnotation(it.ROI, "00_maybe_problem", makeRGB(155, 155, 0)) })
-        throw new Error("Expected 1 or more geometry that touches the tumor geometry, but got ${capsuleGeometries.size()}")
+        addObjects([tissue] + tumorLines.collect { getAnnotation(it.ROI, "00_debug", makeRGB(255, 50, 50)) })
+        throw new RuntimeException("Expected 1 or more geometry that touches the tumor geometry, but got ${capsuleGeometries.size()}")
     }
     def capsule = mergeGeometries(capsuleGeometries)
 
@@ -226,15 +229,36 @@ Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI t
     def tumorLine = lines[0].ROI.geometry.touches(tumor.geometry) ? lines[0] : lines[1]
     def liverLine = lines[0] == tumorLine ? lines[1] : lines[0]
     def midline = createMidlineString(liverLine.ROI.geometry, tumorLine.ROI.geometry)
-//    addObject(getAnnotation(GeometryTools.geometryToROI(midline, getAnnotationObjects()[0].ROI.imagePlane), "midline", makeRGB(255, 0, 0)))
-    assert midline.intersects(capsuleGeometry)
+    
+    if(!midline.intersects(capsuleGeometry)){
+        addDebugAnnotations(tumorLine, liverLine, midline, capsule)
+        throw new RuntimeException('Expected (midline.intersects(capsuleGeometry))')
+    }
     def capsuleParts = GeometryTools.splitGeometryByLineStrings(capsuleGeometry, [midline])
-    assert capsuleParts.size() >= 2
+    if(capsuleParts.size() < 2){
+        addDebugAnnotations(tumorLine, liverLine, midline, capsule)
+        throw new RuntimeException('Expected (capsuleParts.size() >= 2)')
+    }
     def tumorCapsule = mergeGeometries(capsuleParts.findAll { it.touches(tumor.geometry) })
-    assert tumorCapsule != null
+    if(tumorCapsule == null){
+        addDebugAnnotations(tumorLine, liverLine, midline, capsule)
+        throw new RuntimeException('Expected (tumorCapsule != null)')
+    }
     def liverCapsule = mergeGeometries(capsuleParts.findAll { !it.touches(tumor.geometry) })
-    assert liverCapsule != null
+    if(liverCapsule == null){
+        addDebugAnnotations(tumorLine, liverLine, midline, capsule)
+        throw new RuntimeException('Expected (liverCapsule != null)')
+    }
     return [midline, liverCapsule, tumorCapsule].collect { GeometryTools.geometryToROI(it, capsule.imagePlane) }
+}
+
+def addDebugAnnotations(PathObject tumorLine, PathObject liverLine, Geometry midline, ROI capsule) {
+    List<PathObject> debugAnnotations = []
+    debugAnnotations << (getAnnotation(tumorLine.ROI, "00_debug_tumorLine", makeRGB(255, 50, 50)))
+    debugAnnotations << (getAnnotation(liverLine.ROI, "00_debug_liverLine", makeRGB(255, 50, 50)))
+    debugAnnotations << (getAnnotation(GeometryTools.geometryToROI(midline, capsule.imagePlane), "00_debug_midline", makeRGB(255, 50, 50)))
+    debugAnnotations << (getAnnotation(capsule, "00_debug_capsuleGeometry", makeRGB(255, 50, 50)))
+    addObjects(debugAnnotations)
 }
 
 Geometry createMidlineString(Geometry line1, Geometry line2) {
@@ -301,7 +325,7 @@ Geometry createMidlineString(Geometry line1, Geometry line2) {
         }
         // If the midline intersects the lines, we need to try again with a higher resolution
     }
-    throw new Error("Could not find a midline between the two lines that is not intersecting them")
+    throw new RuntimeException("Could not find a midline between the two lines that is not intersecting them")
 }
 
 Geometry mergeGeometries(List<Geometry> geometries) {
