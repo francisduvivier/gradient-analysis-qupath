@@ -242,36 +242,42 @@ Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI t
     def capsuleGeometry = capsule.geometry
     def tumorLine = lines[0].ROI.geometry.touches(tumor.geometry) ? lines[0] : lines[1]
     def liverLine = lines[0] == tumorLine ? lines[1] : lines[0]
-    def midline = createMidlineString(liverLine.ROI.geometry, tumorLine.ROI.geometry)
-
-    if (!midline.intersects(capsuleGeometry)) {
+    Geometry midline = null
+    try {
+        if (tumorLine.ROI.geometry.intersects(liverLine.ROI.geometry)) {
+            throw new LocalRuntimeException('Liver line is intersecting tumor line')
+        }
+        midline = createMidlineString(liverLine.ROI.geometry, tumorLine.ROI.geometry)
+        if (!midline.intersects(capsuleGeometry)) {
+            throw new LocalRuntimeException('Expected (midline.intersects(capsuleGeometry))')
+        }
+        def capsuleParts = GeometryTools.splitGeometryByLineStrings(capsuleGeometry, [midline])
+        if (capsuleParts.size() < 2) {
+            throw new LocalRuntimeException('Expected (capsuleParts.size() >= 2)')
+        }
+        def tumorCapsule = mergeGeometries(capsuleParts.findAll { it.touches(tumor.geometry) })
+        if (tumorCapsule == null) {
+            throw new LocalRuntimeException('Expected (tumorCapsule != null)')
+        }
+        def liverCapsule = mergeGeometries(capsuleParts.findAll { !it.touches(tumor.geometry) })
+        if (liverCapsule == null) {
+            throw new LocalRuntimeException('Expected (liverCapsule != null)')
+        }
+        return [midline, liverCapsule, tumorCapsule].collect { GeometryTools.geometryToROI(it, capsule.imagePlane) }
+    } catch (e) {
         addDebugAnnotations(tumorLine, liverLine, midline, capsule)
-        throw new LocalRuntimeException('Expected (midline.intersects(capsuleGeometry))')
+        throw e
     }
-    def capsuleParts = GeometryTools.splitGeometryByLineStrings(capsuleGeometry, [midline])
-    if (capsuleParts.size() < 2) {
-        addDebugAnnotations(tumorLine, liverLine, midline, capsule)
-        throw new LocalRuntimeException('Expected (capsuleParts.size() >= 2)')
-    }
-    def tumorCapsule = mergeGeometries(capsuleParts.findAll { it.touches(tumor.geometry) })
-    if (tumorCapsule == null) {
-        addDebugAnnotations(tumorLine, liverLine, midline, capsule)
-        throw new LocalRuntimeException('Expected (tumorCapsule != null)')
-    }
-    def liverCapsule = mergeGeometries(capsuleParts.findAll { !it.touches(tumor.geometry) })
-    if (liverCapsule == null) {
-        addDebugAnnotations(tumorLine, liverLine, midline, capsule)
-        throw new LocalRuntimeException('Expected (liverCapsule != null)')
-    }
-    return [midline, liverCapsule, tumorCapsule].collect { GeometryTools.geometryToROI(it, capsule.imagePlane) }
 }
 
 def addDebugAnnotations(PathObject tumorLine, PathObject liverLine, Geometry midline, ROI capsule) {
     List<PathObject> debugAnnotations = []
-    debugAnnotations << (getAnnotation(tumorLine.ROI, "00_debug_tumorLine", makeRGB(255, 50, 50)))
-    debugAnnotations << (getAnnotation(liverLine.ROI, "00_debug_liverLine", makeRGB(255, 50, 50)))
-    debugAnnotations << (getAnnotation(GeometryTools.geometryToROI(midline, capsule.imagePlane), "00_debug_midline", makeRGB(255, 50, 50)))
-    debugAnnotations << (getAnnotation(capsule, "00_debug_capsuleGeometry", makeRGB(255, 50, 50)))
+    debugAnnotations << getAnnotation(tumorLine.ROI, "00_debug_tumorLine", makeRGB(255, 50, 50))
+    debugAnnotations << getAnnotation(liverLine.ROI, "00_debug_liverLine", makeRGB(255, 50, 50))
+    if (midline !== null) {
+        debugAnnotations << getAnnotation(GeometryTools.geometryToROI(midline, capsule.imagePlane), "00_debug_midline", makeRGB(255, 50, 50))
+    }
+    debugAnnotations << getAnnotation(capsule, "00_debug_capsuleGeometry", makeRGB(255, 50, 50))
     addObjects(debugAnnotations)
 }
 
