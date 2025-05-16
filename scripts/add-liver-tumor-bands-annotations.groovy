@@ -248,6 +248,9 @@ Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI t
             throw new LocalRuntimeException('Liver line is intersecting tumor line')
         }
         midline = createMidlineString(liverLine.ROI.geometry, tumorLine.ROI.geometry)
+        if (midline == null || midline.intersects(tumorLine.ROI.geometry) || midline.intersects(liverLine.ROI.geometry)) {
+            throw new LocalRuntimeException('Could not find a non-intersecting midline for the capsule')
+        }
         if (!midline.intersects(capsuleGeometry)) {
             throw new LocalRuntimeException('Expected (midline.intersects(capsuleGeometry))')
         }
@@ -314,6 +317,7 @@ Geometry createMidlineString(Geometry line1, Geometry line2) {
 
     def lengthIndexedRefLine = new LengthIndexedLine(referenceLine)
     def MAX_POWER = 5
+    Geometry midLine
     for (int midLineResolutionPower = 0; midLineResolutionPower < MAX_POWER; midLineResolutionPower++) {
         def sampleCount = Math.max(line1.numPoints, line2.numPoints) * (2 ^ midLineResolutionPower)
         print('Trying to create a capsule midline with resolution power ' + midLineResolutionPower + ', sampleCount ' + sampleCount)
@@ -339,13 +343,13 @@ Geometry createMidlineString(Geometry line1, Geometry line2) {
         }
         midpoints << refLineEnd
 
-        def midLine = geomFactory.createLineString(midpoints as Coordinate[])
+        midLine = geomFactory.createLineString(midpoints as Coordinate[])
         if (!midLine.intersects(line1) && !midLine.intersects(line2)) {
             return midLine
         }
         // If the midline intersects the lines, we need to try again with a higher resolution
     }
-    throw new LocalRuntimeException("Could not find a midline between the two lines that is not intersecting them")
+    return midLine
 }
 
 Geometry mergeGeometries(List<Geometry> geometries) {
