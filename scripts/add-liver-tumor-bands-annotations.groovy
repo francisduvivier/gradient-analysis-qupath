@@ -1,4 +1,5 @@
 //file:noinspection GrMethodMayBeStatic
+//file:noinspection GroovyUnusedAssignment
 
 import groovy.transform.ImmutableOptions
 import org.locationtech.jts.geom.Coordinate
@@ -326,20 +327,41 @@ Geometry createMidlineStringV4(Geometry line1, Geometry line2, Geometry capsuleG
         line2 = line2.reverse()
         assert line2StartPoint === line2.getPointN(0)
     }
-    def liline1 = new LengthIndexedLine(line1)
-    def liline2 = new LengthIndexedLine(line2)
+
     def linesStartXDiff = line2StartPoint.getX() - line1StartPoint.getX()
     def linesStartYDiff = line2StartPoint.getY() - line1StartPoint.getY()
     def xCoefficient = linesStartYDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
     def yCoefficient = linesStartXDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
-
-
-    def limid0 = midPoint(liline1.extractPoint(20 * 0), liline2.extractPoint(20 * 0), geomFactory)
-    def limid1 = midPoint(liline1.extractPoint(20 * 1), liline2.extractPoint(20 * 1), geomFactory)
-    def firstSegment = lineFromPoints([limid0, limid1] as Point[], geomFactory)
+    def liline1 = new LengthIndexedLine(line1)
+    def liline2 = new LengthIndexedLine(line2)
+    def startPoints = getStartingMidPoints(line1, liline1, liline2, capsuleGeometry)
+    def firstSegment = lineFromPoints(startPoints, geomFactory)
     def firstSegmentAnnotation = getAnnotation(toRoi(firstSegment))
 
     addObject(firstSegmentAnnotation)
+    return firstSegment
+}
+
+List<Point> getStartingMidPoints(LineString line1, LengthIndexedLine liline1, LengthIndexedLine liline2, Geometry capsule) {
+    def geomFactory = capsule.factory
+    List<Point> points = []
+    def START_STEP_SIZE = line1.length / line1.numPoints
+    def MAX_START_POINTS = line1.numPoints
+    int i = 0
+    while (points.isEmpty() || !points.last.within(capsule)) {
+        i += 1
+        if (i > MAX_START_POINTS) {
+            print('START_STEP_SIZE: ' + START_STEP_SIZE)
+            print('MAX_START_POINTS: ' + MAX_START_POINTS)
+            return points
+//            throw new LocalRuntimeException('Looks like the line endpoints are too weird. Please make them cleaner.')
+        }
+        def p1 = liline1.extractPoint(START_STEP_SIZE * i)
+        def p2 = liline2.extractPoint(START_STEP_SIZE * i)
+        def newMidPoint = midPoint(p1, p2, geomFactory)
+        points.push(newMidPoint)
+    }
+    return points
 }
 
 double calculateAngleDegrees(double opposite, double adjacent) {
@@ -467,6 +489,6 @@ Point midPoint(Coordinate p1, Coordinate p2, GeometryFactory geomFactory) {
     return geomFactory.createLineString([p1, p2] as Coordinate[]).centroid
 }
 
-LineString lineFromPoints(Point[] points, GeometryFactory geomFactory) {
+LineString lineFromPoints(List<Point> points, GeometryFactory geomFactory) {
     return geomFactory.createLineString(points.collect { it.coordinate } as Coordinate[])
 }
