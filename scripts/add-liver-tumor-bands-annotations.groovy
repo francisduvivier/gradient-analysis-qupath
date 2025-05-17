@@ -335,7 +335,7 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
     def annotations = []
     def refLinePoints = Math.max(line1.numPoints, line2.numPoints)
     List<PathObject> segmentAnnotations = []
-    List<PathObject> renderedSegments = []
+    Collection<PathObject> renderedSegments = []
     for (int midLineResolutionPower = 0; midLineResolutionPower <= MAX_POWER; midLineResolutionPower++) {
         def sampleCount = refLinePoints * (2**(midLineResolutionPower - 4))
         def partSize = 2 * line1.getLength() / sampleCount
@@ -386,7 +386,9 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
                 }
             }
         }
-        removeObjects(renderedSegments)
+        if (renderedSegments.size() > 0) {
+            removeObjects(renderedSegments, false)
+        }
 //        midPoints << refLineEnd
         if (midPoints.size() >= 2) {
             midLine = geomFactory.createLineString(midPoints as Coordinate[])
