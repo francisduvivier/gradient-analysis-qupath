@@ -47,9 +47,9 @@ def main() {
 
 }
 
-def DEBUG_MODE() { return false } // local change
-
-def DEBUG_MODE_CAPSULE_DIRECTIONS() { return false } // local change
+def DEBUG_MODE() { return false }
+def DEBUG_MODE_CAPSULE_DIRECTIONS() { return false }
+def VISUALIZE_PATH_FINDING() { return true }
 
 def createGradientAnnotations(TissueWithLines tissueAndLines, int coreIndex, List<Integer> liverBands, List<Integer> tumorBands) {
     List<PathObject> tissueAnnotations = []
@@ -377,9 +377,11 @@ Geometry createMidlineStringV4(Geometry line1, Geometry line2, Geometry capsuleG
                 midPoints << newPoint
             }
             if (i % 10 == 0) {
-                addObjects(segmentAnnotations)
-                renderedSegments.addAll(segmentAnnotations)
-                segmentAnnotations.clear()
+                if (VISUALIZE_PATH_FINDING()) {
+                    addObjects(segmentAnnotations)
+                    renderedSegments.addAll(segmentAnnotations)
+                    segmentAnnotations.clear()
+                }
                 if (DEBUG_MODE()) {
                     addObjects(annotations)
                     annotations.clear()
