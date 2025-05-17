@@ -143,7 +143,7 @@ PathObject getAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255,
         print "Removing existing annotation [$name]"
         removeObject(existing, false)
     }
-//    print "Successfully added ROI [$name] annotation"
+    print "Successfully created ROI [$name] annotation"
     return newAnnotation
 }
 
@@ -209,14 +209,16 @@ double getDistance(double microns) {
 // We need the pixel size
     def cal = server.getPixelCalibration()
     if (!cal.hasPixelSizeMicrons()) {
-        print 'We need the pixel size information here!'
-        print 'cal.getPixelWidth() ' + cal.getPixelWidth()
-        print 'cal.getPixelWidthMicrons() ' + cal.getPixelWidthMicrons()
-        print 'cal.getPixelWidthUnit(): ' + cal.getPixelWidthUnit()
-        print 'cal.getAveragedPixelSizeMicrons(): ' + cal.getAveragedPixelSizeMicrons()
+
         if (cal.getPixelWidthUnit() == 'px' && ALLOW_NO_CALIBRATION()) {
             print 'Warning!!! Going through with pixels instead of microns for debugging purposes'
             return microns / cal.getAveragedPixelSize()
+        } else {
+            print 'We need the pixel size information here!'
+            print 'cal.getPixelWidth() ' + cal.getPixelWidth()
+            print 'cal.getPixelWidthMicrons() ' + cal.getPixelWidthMicrons()
+            print 'cal.getPixelWidthUnit(): ' + cal.getPixelWidthUnit()
+            print 'cal.getAveragedPixelSizeMicrons(): ' + cal.getAveragedPixelSizeMicrons()
         }
         throw new LocalRuntimeException("We need the pixel size information here!")
     }
@@ -326,14 +328,14 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
     }
     // Then we create a LengthIndexedLine from the reference line
     def midLineStart = new Coordinate((line1StartPoint.x + line2StartPoint.x) / 2.0, (line1StartPoint.y + line2StartPoint.y) / 2.0)
-    def MAX_POWER = 0
+    def MAX_POWER = 6
     Geometry midLine = null
     def annotations = []
     def refLinePoints = Math.max(line1.numPoints, line2.numPoints)
     List<PathObject> segmentAnnotations = []
     List<PathObject> renderedSegments = []
     for (int midLineResolutionPower = 0; midLineResolutionPower <= MAX_POWER; midLineResolutionPower++) {
-        def sampleCount = refLinePoints * (2**(midLineResolutionPower + 2))
+        def sampleCount = refLinePoints * (2**(midLineResolutionPower - 4))
         def partSize = 2 * line1.getLength() / sampleCount
         print('Trying to create a capsule midline with resolution power ' + midLineResolutionPower + ', sampleCount ' + sampleCount)
         def midPoints = [midLineStart]
@@ -346,33 +348,43 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
             def prev = midPoints.last
             def newPoint = new Coordinate(prev.getX() + xCoefficient * partSize, prev.getY() + yCoefficient * partSize)
 
-            annotations << getAnnotation(toRoi(geomFactory.createPoint(newPoint)), "00_debug_point_start_" + i, ColorTools.makeRGBA(20, 20, 20, 100))
+            if (DEBUG_MODE()) annotations << getAnnotation(toRoi(geomFactory.createPoint(newPoint)), "00_debug_point_start_" + i, ColorTools.makeRGBA(20, 20, 20, 100))
+            if (capsuleGeometry.contains(geomFactory.createPoint(prev))) {
+                def newMidPoint = findNewMidPoint(prev, newPoint, line1, line2, geomFactory, annotations, i)
 
-            def newMidPoint = findNewMidPoint(prev, newPoint, line1, line2, geomFactory, annotations, i)
-            def insideToOutsideCapsule = capsuleGeometry.contains(geomFactory.createPoint(prev)) && !capsuleGeometry.contains(geomFactory.createPoint(newMidPoint))
-            segmentAnnotations << getAnnotation(toRoi(geomFactory.createLineString([prev, newMidPoint] as Coordinate[])),
-                    "00_debug_seg_" + i, ColorTools.makeRGBA(20, 20, 100, 100))
+                def newPointIsOutside = !capsuleGeometry.contains(geomFactory.createPoint(newMidPoint))
+                def insideToOutsideCapsule = capsuleGeometry.contains(geomFactory.createPoint(prev)) && newPointIsOutside
+                segmentAnnotations << getAnnotation(toRoi(geomFactory.createLineString([prev, newMidPoint] as Coordinate[])),
+                        "00_debug_seg_" + i, ColorTools.makeRGBA(20, 20, 100, 100))
 
-            if (newMidPoint !== null) {
+                if (newMidPoint !== null) {
 //                print("Coefficients updated from [${xCoefficient}] [${yCoefficient}]")
-                double newXDiff = newMidPoint.getX() - prev.getX()
-                double newYDiff = newMidPoint.getY() - prev.getY()
-                xCoefficient = newXDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
-                yCoefficient = newYDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
+                    double newXDiff = newMidPoint.getX() - prev.getX()
+                    double newYDiff = newMidPoint.getY() - prev.getY()
+                    xCoefficient = newXDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
+                    yCoefficient = newYDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
 //                print("Coefficients updated to [${xCoefficient}] [${yCoefficient}]")
-            }
-            midPoints << newMidPoint
-            if (insideToOutsideCapsule) {
-                break
+                    midPoints << newMidPoint
+                } else {
+                    midPoints << newPoint
+                }
+                if (insideToOutsideCapsule) {
+                    break
+                }
+            } else {
+                midPoints << newPoint
             }
             if (i % 10 == 0) {
                 addObjects(segmentAnnotations)
                 renderedSegments.addAll(segmentAnnotations)
                 segmentAnnotations.clear()
+                if (DEBUG_MODE()) {
+                    addObjects(annotations)
+                    annotations.clear()
+                }
             }
         }
         removeObjects(renderedSegments)
-        if (DEBUG_MODE()) addObjects(annotations)
 //        midPoints << refLineEnd
         if (midPoints.size() >= 2) {
             midLine = geomFactory.createLineString(midPoints as Coordinate[])
@@ -425,8 +437,8 @@ Coordinate findBestNewPoint(Coordinate newPoint, double orthLength, int prevAngl
     def minCrossLength = orthLength
     Tuple<Coordinate> bestPoints = [null, null]
     def ANGLE_STEP_SIZE = 20
-    def MAX_ANGLE_DIFF = 80
-    List<PathObject> ann = []
+    def MAX_ANGLE_DIFF = 100
+    List<PathObject> debugAnnotations = []
     for (int dir = -1; dir <= 1; dir += 2) {
         for (int angleDiff = 0; angleDiff <= MAX_ANGLE_DIFF; angleDiff += ANGLE_STEP_SIZE) {
             angle = prevAngle + angleDiff * dir
@@ -436,7 +448,7 @@ Coordinate findBestNewPoint(Coordinate newPoint, double orthLength, int prevAngl
             def firstOrthEnd = new Coordinate(newPoint.x + xDir * orthLength, newPoint.y + yDir * orthLength)
 
             LineString orthogonalLine = geomFactory.createLineString([firstOrthStart, firstOrthEnd] as Coordinate[])
-            if (DEBUG_MODE_CAPSULE_DIRECTIONS()) ann << getAnnotation(toRoi(orthogonalLine), "00_debug_direction_i${i}_a$angle", ColorTools.makeRGBA(20, 20, 20, 75))
+            if (DEBUG_MODE_CAPSULE_DIRECTIONS()) debugAnnotations << getAnnotation(toRoi(orthogonalLine), "00_debug_direction_i${i}_a$angle", ColorTools.makeRGBA(20, 20, 20, 75))
 
             def p1 = selectClosestPoint(line1.intersection(orthogonalLine), newPoint)
             def p2 = selectClosestPoint(line2.intersection(orthogonalLine), newPoint)
@@ -451,7 +463,7 @@ Coordinate findBestNewPoint(Coordinate newPoint, double orthLength, int prevAngl
             }
         }
     }
-    if (DEBUG_MODE()) addObjects(ann)
+    if (DEBUG_MODE()) addObjects(debugAnnotations)
     def (p1, p2) = bestPoints
     if (p1 == null || p2 == null) {
         // This is the case of orthogonal line on the edges that is not intersecting one of the 2 lines, this is normal
