@@ -332,35 +332,50 @@ Geometry createMidlineStringV4(Geometry line1, Geometry line2, Geometry capsuleG
     def linesStartYDiff = line2StartPoint.getY() - line1StartPoint.getY()
     def xCoefficient = linesStartYDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
     def yCoefficient = linesStartXDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
-    def liline1 = new LengthIndexedLine(line1)
-    def liline2 = new LengthIndexedLine(line2)
-    def startPoints = getStartingMidPoints(line1, liline1, liline2, capsuleGeometry)
-    def firstSegment = lineFromPoints(startPoints, geomFactory)
-    def firstSegmentAnnotation = getAnnotation(toRoi(firstSegment))
-
-    addObject(firstSegmentAnnotation)
-    return firstSegment
+    def midLinePoints = calcMidline(line1, line2, capsuleGeometry)
+    def midLineString = lineFromPoints(midLinePoints, geomFactory)
+    return midLineString
 }
 
-List<Point> getStartingMidPoints(LineString line1, LengthIndexedLine liline1, LengthIndexedLine liline2, Geometry capsule) {
+List<Point> calcMidline(LineString line1, LineString line2, Geometry capsule) {
+    def liLine1 = new LengthIndexedLine(line1)
+    def liLine2 = new LengthIndexedLine(line2)
     def geomFactory = capsule.factory
     List<Point> points = []
-    def START_STEP_SIZE = line1.length / line1.numPoints
-    def MAX_START_POINTS = line1.numPoints
+    points.push(midPoint(line1.getStartPoint(), line2.getStartPoint(), line1.factory))
+    def stepSize = line1.length / line1.numPoints
+    def MAX_POINTS = line1.numPoints
     int i = 0
-    while (points.isEmpty() || !points.last.within(capsule)) {
+    def within = false
+    def line1Offset = 0
+    def line2Offset = 0
+    while (true) {
         i += 1
-        if (i > MAX_START_POINTS) {
-            print('START_STEP_SIZE: ' + START_STEP_SIZE)
-            print('MAX_START_POINTS: ' + MAX_START_POINTS)
+        if (i > MAX_POINTS) {
+            print('START_STEP_SIZE: ' + stepSize)
+            print('MAX_START_POINTS: ' + MAX_POINTS)
             return points
 //            throw new LocalRuntimeException('Looks like the line endpoints are too weird. Please make them cleaner.')
         }
-        def p1 = liline1.extractPoint(START_STEP_SIZE * i)
-        def p2 = liline2.extractPoint(START_STEP_SIZE * i)
+
+        def locationInLine1 = stepSize * i + line1Offset
+        def p1 = liLine1.extractPoint(locationInLine1)
+
+        def locationInLine2 = stepSize * i + line2Offset
+        def p2 = liLine2.extractPoint(locationInLine2)
         def newMidPoint = midPoint(p1, p2, geomFactory)
+
+        line1Offset += getOffsetToClosestNextPoint(liLine1, locationInLine1, newMidPoint)
+        line2Offset += getOffsetToClosestNextPoint(liLine2, locationInLine2, newMidPoint)
         points.push(newMidPoint)
+        def newWithin = newMidPoint.within(capsule)
+        def breakingOut = within && !newWithin
+        if (breakingOut) {
+            break
+        }
+        within = newWithin
     }
+    points.push(midPoint(line1.getEndPoint(), line2.getEndPoint(), line1.factory))
     return points
 }
 
@@ -485,10 +500,28 @@ ImagePlane getDefaultImagePlane() {
     return getAnnotationObjects().find { it.ROI != null }.ROI.imagePlane
 }
 
+Point midPoint(Point p1, Point p2, GeometryFactory geomFactory) {
+    return midPoint(p1.coordinate, p2.coordinate, geomFactory)
+}
+
 Point midPoint(Coordinate p1, Coordinate p2, GeometryFactory geomFactory) {
     return geomFactory.createLineString([p1, p2] as Coordinate[]).centroid
 }
 
 LineString lineFromPoints(List<Point> points, GeometryFactory geomFactory) {
     return geomFactory.createLineString(points.collect { it.coordinate } as Coordinate[])
+}
+
+int getOffsetToClosestNextPoint(LengthIndexedLine lengthIndexedLine, double lengthIndex, Point midPoint, double stepSize = 1d) {
+    def bestDist = Double.POSITIVE_INFINITY
+    def MAX_STEPS = (int) lengthIndexedLine.endIndex / stepSize
+    for (int i = 0; i < MAX_STEPS; i++) {
+        def offset = i * stepSize
+        def newDist = lengthIndexedLine.extractPoint(lengthIndex + offset).distance(midPoint.coordinate)
+        if (newDist >= bestDist) {
+            return (i - 1) * stepSize
+        }
+        bestDist = newDist
+    }
+    return 0
 }
