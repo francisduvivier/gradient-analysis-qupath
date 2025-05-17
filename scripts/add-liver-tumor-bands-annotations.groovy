@@ -5,6 +5,8 @@ import org.locationtech.jts.geom.Coordinate
 import org.locationtech.jts.geom.Geometry
 import org.locationtech.jts.geom.GeometryFactory
 import org.locationtech.jts.geom.LineString
+import org.locationtech.jts.geom.Point
+import org.locationtech.jts.linearref.LengthIndexedLine
 import qupath.lib.common.ColorTools
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
@@ -136,7 +138,7 @@ Collection<PathObject> findLinesForTissue(Collection<PathObject> annotations, Pa
     return lines
 }
 
-PathObject getAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255, 0)) {
+PathObject getAnnotation(ROI roi, String name = 'unnamed annotation', Integer color = makeRGB(255, 255, 0)) {
     def newAnnotation = PathObjects.createAnnotationObject(roi)
     newAnnotation.setClassifications(['Auto'])
     newAnnotation.setColor(color)
@@ -319,97 +321,25 @@ Geometry createMidlineStringV4(Geometry line1, Geometry line2, Geometry capsuleG
     def line1StartPoint = line1.getStartPoint()
     def line1XCoefficient = line1.getPointN(1).getX() - line1.getPointN(0).getX()
     if (line2StartPoint.distance(line1StartPoint) > line2EndPoint.distance(line1StartPoint)) {
+        print('WARN: reversing line 2!')
         line2StartPoint = line2EndPoint
+        line2 = line2.reverse()
+        assert line2StartPoint === line2.getPointN(0)
     }
+    def liline1 = new LengthIndexedLine(line1)
+    def liline2 = new LengthIndexedLine(line2)
     def linesStartXDiff = line2StartPoint.getX() - line1StartPoint.getX()
     def linesStartYDiff = line2StartPoint.getY() - line1StartPoint.getY()
     def xCoefficient = linesStartYDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
     def yCoefficient = linesStartXDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
-    if (Math.abs(xCoefficient - line1XCoefficient) > Math.abs(xCoefficient + line1XCoefficient)) {
-        // Select the direction sense that matches up most with the fist segment of line1
-        xCoefficient = -xCoefficient
-        yCoefficient = -yCoefficient
-    }
-    // Then we create a LengthIndexedLine from the reference line
-    def midLineStart = new Coordinate((line1StartPoint.x + line2StartPoint.x) / 2.0, (line1StartPoint.y + line2StartPoint.y) / 2.0)
-    def MAX_POWER = 6
-    Geometry midLine = null
-    def annotations = []
-    def refLinePoints = Math.max(line1.numPoints, line2.numPoints)
-    List<PathObject> segmentAnnotations = []
-    Collection<PathObject> renderedSegments = []
-    for (int midLineResolutionPower = 0; midLineResolutionPower <= MAX_POWER; midLineResolutionPower++) {
-        def sampleCount = refLinePoints * (2**(midLineResolutionPower - 3))
-        def partSize = 2 * line1.getLength() / sampleCount
-        print('Trying to create a capsule midline with resolution power ' + midLineResolutionPower + ', sampleCount ' + sampleCount)
-        def midPoints = [midLineStart]
-        xCoefficient = linesStartYDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
-        yCoefficient = linesStartXDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
-        // We loop over the sampleCount,
-        for (int i = 0; i <= sampleCount; i++) {
-            if ((i % 10) == 0) Thread.sleep(0) // Enable killing the process for if it takes too long
-
-            def prev = midPoints.last
-            def newPoint = new Coordinate(prev.getX() + xCoefficient * partSize, prev.getY() + yCoefficient * partSize)
-
-            if (DEBUG_MODE()) annotations << getAnnotation(toRoi(geomFactory.createPoint(newPoint)), "00_debug_point_start_" + i, ColorTools.makeRGBA(20, 20, 20, 100))
-            if (capsuleGeometry.contains(geomFactory.createPoint(prev))) {
-                def newMidPoint = findNewMidPoint(prev, newPoint, line1, line2, geomFactory, annotations, i)
-
-                def newPointIsOutside = !capsuleGeometry.contains(geomFactory.createPoint(newMidPoint))
-                def insideToOutsideCapsule = capsuleGeometry.contains(geomFactory.createPoint(prev)) && newPointIsOutside
-                if (VISUALIZE_PATH_FINDING()) segmentAnnotations << getAnnotation(toRoi(geomFactory.createLineString([prev, newMidPoint] as Coordinate[])),
-                        "00_debug_seg_" + i, ColorTools.makeRGBA(i % 2 == 0 ? 255 : 0, i % 2 == 0 ? 255 : 0, i % 2 == 0 ? 255 : 0, 255)
-                )
 
 
-                if (newMidPoint !== null) {
-//                print("Coefficients updated from [${xCoefficient}] [${yCoefficient}]")
-                    double newXDiff = newMidPoint.getX() - prev.getX()
-                    double newYDiff = newMidPoint.getY() - prev.getY()
-                    xCoefficient = newXDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
-                    yCoefficient = newYDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
-//                print("Coefficients updated to [${xCoefficient}] [${yCoefficient}]")
-                    midPoints << newMidPoint
-                } else {
-                    midPoints << newPoint
-                }
-                if (insideToOutsideCapsule) {
-                    break
-                }
-            } else {
-                midPoints << newPoint
-            }
-            if (i % 10 == 0) {
-                if (VISUALIZE_PATH_FINDING()) {
-                    addObjects(segmentAnnotations)
-                    renderedSegments.addAll(segmentAnnotations)
-                    segmentAnnotations.clear()
-                }
-                if (DEBUG_MODE()) {
-                    addObjects(annotations)
-                    annotations.clear()
-                }
-            }
-        }
-        if (renderedSegments.size() > 0) {
-            removeObjects(renderedSegments, false)
-        }
-//        midPoints << refLineEnd
-        if (midPoints.size() >= 2) {
-            midLine = geomFactory.createLineString(midPoints as Coordinate[])
-            if (!midLine.intersects(line1) && !midLine.intersects(line2)) {
-                def capsuleCrossings = midLine.intersection(capsuleGeometry.boundary)
-                if (capsuleCrossings.numPoints == 2) {
-                    return midLine
-                } else {
-                    print("WARN midline finished but did not cross capsule in 2 points, but instead ${capsuleCrossings.numPoints}")
-                }
-            }
-        }
-        // If the midline intersects the lines, we need to try again with a higher resolution
-    }
-    return midLine
+    def limid0 = midPoint(liline1.extractPoint(20 * 0), liline2.extractPoint(20 * 0), geomFactory)
+    def limid1 = midPoint(liline1.extractPoint(20 * 1), liline2.extractPoint(20 * 1), geomFactory)
+    def firstSegment = lineFromPoints([limid0, limid1] as Point[], geomFactory)
+    def firstSegmentAnnotation = getAnnotation(toRoi(firstSegment))
+
+    addObject(firstSegmentAnnotation)
 }
 
 double calculateAngleDegrees(double opposite, double adjacent) {
@@ -533,3 +463,10 @@ ImagePlane getDefaultImagePlane() {
     return getAnnotationObjects().find { it.ROI != null }.ROI.imagePlane
 }
 
+Point midPoint(Coordinate p1, Coordinate p2, GeometryFactory geomFactory) {
+    return geomFactory.createLineString([p1, p2] as Coordinate[]).centroid
+}
+
+LineString lineFromPoints(Point[] points, GeometryFactory geomFactory) {
+    return geomFactory.createLineString(points.collect { it.coordinate } as Coordinate[])
+}
