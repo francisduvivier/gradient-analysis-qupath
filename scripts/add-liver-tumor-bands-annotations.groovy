@@ -5,8 +5,6 @@ import org.locationtech.jts.geom.Coordinate
 import org.locationtech.jts.geom.Geometry
 import org.locationtech.jts.geom.GeometryFactory
 import org.locationtech.jts.geom.LineString
-import org.locationtech.jts.geom.Point
-import org.locationtech.jts.linearref.LengthIndexedLine
 import qupath.lib.common.ColorTools
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
@@ -16,7 +14,6 @@ import qupath.lib.roi.GeometryTools
 
 import static qupath.lib.scripting.QP.addObjects
 import static qupath.lib.scripting.QP.getAnnotationObjects
-import static qupath.lib.scripting.QP.getCurrentHierarchy
 import static qupath.lib.scripting.QP.getCurrentImageData
 
 print('START: main')
