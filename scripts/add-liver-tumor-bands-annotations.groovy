@@ -18,6 +18,7 @@ import qupath.lib.roi.GeometryTools
 import static qupath.lib.scripting.QP.addObjects
 import static qupath.lib.scripting.QP.getAnnotationObjects
 import static qupath.lib.scripting.QP.getCurrentImageData
+import static qupath.lib.scripting.QP.makeRGB
 import static qupath.lib.scripting.QP.removeObjects
 
 print('START: main')
@@ -51,7 +52,7 @@ def main() {
 
 def createGradientAnnotations(TissueWithLines tissueAndLines, int coreIndex, List<Integer> liverBands, List<Integer> tumorBands) {
     List<PathObject> tissueAnnotations = []
-    def (liver, tumor, capsule) = getSeparatedTissueParts(tissueAndLines)
+    def (ROI liver , ROI tumor , ROI capsule ) = getSeparatedTissueParts(tissueAndLines)
     tissueAnnotations << getAnnotation(tumor, "${coreIndex}_tumor", makeRGB(150, 150, 0))
     tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
 
@@ -169,7 +170,7 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
         def liver = halvesGeometries.findAll() { !isTumor(it) }.sort { it.area }.last
 
         def ignoredGeometries = halvesGeometries.findAll { ![liver, tumor].contains(it) }
-        annotateIgnoredGeometries(ignoredGeometries, tissue)
+        annotateIgnoredGeometries(ignoredGeometries)
 
         return [liver, tumor].collect { toRoi(it) }
     }
@@ -192,11 +193,11 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
 
     def liver = halvesGeometries.findAll { !isTumor(it) && !capsuleGeometries.contains(it) }.sort { it.area }.last
     def ignoredGeometries = halvesGeometries.findAll { !([liver, tumor] + capsuleGeometries).contains(it) }
-    annotateIgnoredGeometries(ignoredGeometries, tissue)
+    annotateIgnoredGeometries(ignoredGeometries)
     return [liver, tumor, capsule].collect { toRoi(it) }
 }
 
-void annotateIgnoredGeometries(List<Geometry> ignoredGeometries, tissue) {
+void annotateIgnoredGeometries(List<Geometry> ignoredGeometries) {
     def annotations = ignoredGeometries.collect { getAnnotation(toRoi(it), "00_ignored", makeRGB(200, 0, 100)) }
     addObjects(annotations.findAll { it.ROI.isLine() || it.ROI.getArea() > 0 })
 }
