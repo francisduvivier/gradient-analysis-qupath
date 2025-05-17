@@ -14,6 +14,7 @@ import qupath.lib.regions.ImagePlane
 import qupath.lib.roi.interfaces.ROI
 import qupath.lib.roi.GeometryTools
 
+import static qupath.lib.scripting.QP.addObjects
 import static qupath.lib.scripting.QP.getAnnotationObjects
 import static qupath.lib.scripting.QP.getCurrentHierarchy
 import static qupath.lib.scripting.QP.getCurrentImageData
@@ -50,10 +51,13 @@ def main() {
 def DEBUG_MODE() { return true }
 
 def createGradientAnnotations(TissueWithLines tissueAndLines, int coreIndex, List<Integer> liverBands, List<Integer> tumorBands) {
+    List<PathObject> tissueAnnotations = []
     def (liver, tumor, capsule) = getSeparatedTissueParts(tissueAndLines)
+    tissueAnnotations << getAnnotation(tumor, "${coreIndex}_tumor", makeRGB(150, 150, 0))
+    tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
+
     def liverWC = unionROI(liver, capsule)
     def tumorWC = unionROI(tumor, capsule)
-    List<PathObject> tissueAnnotations = []
     if (capsule != null) {
         tissueAnnotations << getAnnotation(capsule, "${coreIndex}_capsule_whole", makeRGB(0, 150, 0))
         def (midLine, liverCapsule, tumorCapsule) = splitCapsuleInHalves(capsule, tissueAndLines.lines(), tumor)
@@ -61,12 +65,10 @@ def createGradientAnnotations(TissueWithLines tissueAndLines, int coreIndex, Lis
         tissueAnnotations << getAnnotation(tumorCapsule, "${coreIndex}_capsule_tumor", makeRGB(0, 150, 0))
         tissueAnnotations << getAnnotation(liverCapsule, "${coreIndex}_capsule_liver", makeRGB(0, 150, 0))
     }
-    tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
     def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liverWC, tumorWC, liverBands)
     tissueAnnotations.addAll(liverExpansionAnnotations)
     tissueAnnotations << getAnnotation(createCentralROI(tumor, biggestLiverExpansion), "${coreIndex}_tumor_central", makeRGB(0, 150, 0))
 
-    tissueAnnotations << getAnnotation(tumor, "${coreIndex}_tumor", makeRGB(150, 150, 0))
     def (biggestTumorExpansion, tumorExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_liver", tumorWC, liverWC, tumorBands)
     tissueAnnotations.addAll(tumorExpansionAnnotations)
     tissueAnnotations << getAnnotation(createCentralROI(liver, biggestTumorExpansion), "${coreIndex}_liver_central", makeRGB(0, 150, 0))
@@ -147,8 +149,8 @@ PathObject getAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255,
 }
 
 Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
-    def (tissue, tumorLines) = [tissueAndLines.tissue(), tissueAndLines.lines()]
-    def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, tumorLines.collect { it.ROI.geometry })
+    def (tissue, tissueSplitLines) = [tissueAndLines.tissue(), tissueAndLines.lines()]
+    def halvesGeometries = GeometryTools.splitGeometryByLineStrings(tissue.ROI.geometry, tissueSplitLines.collect { it.ROI.geometry })
     def tumors = halvesGeometries.findAll { isTumor(it) }.sort { it.area }
 
     if (tumors.size() === 0) {
@@ -156,7 +158,7 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
         throw new LocalRuntimeException("No `Tumor` annotation found within the bounds of tissue [${tissue?.getID()}], please add an annotation with `Tumor` classification manually within one the tissue somewhere.")
     }
     def tumor = tumors.last
-    if (tumorLines.size() == 1) {
+    if (tissueSplitLines.size() == 1) {
         if (halvesGeometries.size() !== 2) {
             if (halvesGeometries.size() < 2 || REJECT_DIRTY_ANNOTATIONS()) {
                 addObjects(halvesGeometries.collect { getAnnotation(toRoi(it, tissue.ROI.imagePlane), "00_debug", makeRGB(255, 50, 50)) })
@@ -184,7 +186,7 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     }
     def capsuleGeometries = halvesGeometries.findAll { it.touches(tumor) }
     if (capsuleGeometries.size() < 1) {
-        addObjects([tissue] + tumorLines.collect { getAnnotation(it.ROI, "00_debug", makeRGB(255, 50, 50)) })
+        addObjects([tissue] + tissueSplitLines.collect { getAnnotation(it.ROI, "00_debug", makeRGB(255, 50, 50)) })
         throw new LocalRuntimeException("Expected 1 or more geometry that touches the tumor geometry, but got ${capsuleGeometries.size()}")
     }
     def capsule = mergeGeometries(capsuleGeometries)
@@ -268,8 +270,9 @@ Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI t
         if (capsuleParts.size() < 2) {
             throw new LocalRuntimeException('Expected (capsuleParts.size() >= 2)')
         }
-        def tumorCapsule = mergeGeometries(capsuleParts.findAll { it.touches(tumor.geometry) })
+        def tumorCapsule = mergeGeometries(capsuleParts.findAll { it.touches(tumor.geometry) || it.intersects(tumor.geometry) })
         if (tumorCapsule == null) {
+            addObjects(capsuleParts.collect { getAnnotation(toRoi(it), "00_debug_capsule_part", makeRGB(255, 50, 50)) })
             throw new LocalRuntimeException('Expected (tumorCapsule != null)')
         }
         def liverCapsule = mergeGeometries(capsuleParts.findAll { !it.touches(tumor.geometry) })
@@ -332,7 +335,7 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
     def refLinePoints = Math.max(line1.numPoints, line2.numPoints)
 
     for (int midLineResolutionPower = 0; midLineResolutionPower <= MAX_POWER; midLineResolutionPower++) {
-        def sampleCount = refLinePoints * (2**(midLineResolutionPower - 1))
+        def sampleCount = refLinePoints * (2**(midLineResolutionPower - 2))
         def partSize = 2 * line1.getLength() / sampleCount
         print('Trying to create a capsule midline with resolution power ' + midLineResolutionPower + ', sampleCount ' + sampleCount)
         def midPoints = [midLineStart]
