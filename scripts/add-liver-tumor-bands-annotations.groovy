@@ -333,7 +333,7 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
     List<PathObject> segmentAnnotations = []
     List<PathObject> renderedSegments = []
     for (int midLineResolutionPower = 0; midLineResolutionPower <= MAX_POWER; midLineResolutionPower++) {
-        def sampleCount = refLinePoints * (2**(midLineResolutionPower))
+        def sampleCount = refLinePoints * (2**(midLineResolutionPower + 2))
         def partSize = 2 * line1.getLength() / sampleCount
         print('Trying to create a capsule midline with resolution power ' + midLineResolutionPower + ', sampleCount ' + sampleCount)
         def midPoints = [midLineStart]
@@ -344,12 +344,11 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
             if ((i % 10) == 0) Thread.sleep(0) // Enable killing the process for if it takes too long
 
             def prev = midPoints.last
-            def prevPrev = midPoints.size() == 1 ? prev : midPoints[midPoints.size() - 2]
             def newPoint = new Coordinate(prev.getX() + xCoefficient * partSize, prev.getY() + yCoefficient * partSize)
 
             annotations << getAnnotation(toRoi(geomFactory.createPoint(newPoint)), "00_debug_point_start_" + i, ColorTools.makeRGBA(20, 20, 20, 100))
 
-            def newMidPoint = findNewMidPoint(prevPrev, newPoint, line1, line2, geomFactory, annotations, i)
+            def newMidPoint = findNewMidPoint(prev, newPoint, line1, line2, geomFactory, annotations, i)
             def insideToOutsideCapsule = capsuleGeometry.contains(geomFactory.createPoint(prev)) && !capsuleGeometry.contains(geomFactory.createPoint(newMidPoint))
             segmentAnnotations << getAnnotation(toRoi(geomFactory.createLineString([prev, newMidPoint] as Coordinate[])),
                     "00_debug_seg_" + i, ColorTools.makeRGBA(20, 20, 100, 100))
