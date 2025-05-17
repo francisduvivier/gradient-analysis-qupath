@@ -336,6 +336,7 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
             annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(newPoint)), "00_debug_point_start_" + i, makeRGB(255, 50, 50))
 
             def (newMidPoint) = findNewMidPoint(prev, newPoint, line1, line2, geomFactory, annotations, i, capsuleGeometry)
+            def insideToOutsideCapsule = capsuleGeometry.contains(geomFactory.createPoint(prev)) && !capsuleGeometry.contains(geomFactory.createPoint(newMidPoint))
             if (newMidPoint !== newPoint) {
                 print("Coefficients updated from [${xCoefficient}] [${yCoefficient}]")
                 double newXDiff = newMidPoint.getX() - prev.getX()
@@ -345,12 +346,15 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
                 print("Coefficients updated to [${xCoefficient}] [${yCoefficient}]")
             }
             midPoints << newMidPoint
+            if(insideToOutsideCapsule){
+                break
+            }
         }
 //        addObjects(annotations)
 //        midPoints << refLineEnd
         if (midPoints.size() >= 2) {
             midLine = geomFactory.createLineString(midPoints as Coordinate[])
-            if (!midLine.intersects(line1) && !midLine.intersects(line2)) {
+            if (!midLine.intersects(line1) && !midLine.intersects(line2) && midLine.intersection(capsuleGeometry).numPoints == 2) {
                 return midLine
             }
         }
