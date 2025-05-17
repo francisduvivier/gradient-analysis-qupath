@@ -3,6 +3,7 @@
 import groovy.transform.ImmutableOptions
 import org.locationtech.jts.geom.Coordinate
 import org.locationtech.jts.geom.Geometry
+import org.locationtech.jts.geom.GeometryFactory
 import org.locationtech.jts.geom.LineString
 import org.locationtech.jts.linearref.LengthIndexedLine
 import qupath.lib.objects.PathObject
@@ -247,7 +248,7 @@ Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI t
         if (tumorLine.ROI.geometry.intersects(liverLine.ROI.geometry)) {
             throw new LocalRuntimeException('Liver line is intersecting tumor line')
         }
-        midline = createMidlineStringV2(liverLine.ROI.geometry, tumorLine.ROI.geometry)
+        midline = createMidlineStringV3(liverLine.ROI.geometry, tumorLine.ROI.geometry, capsule.geometry)
         if (midline == null || midline.intersects(tumorLine.ROI.geometry) || midline.intersects(liverLine.ROI.geometry)) {
             throw new LocalRuntimeException('Could not find a non-intersecting midline for the capsule')
         }
@@ -319,7 +320,7 @@ Geometry createMidlineStringV2(Geometry line1, Geometry line2) {
     def MAX_POWER = 5
     Geometry midLine
     for (int midLineResolutionPower = 0; midLineResolutionPower < MAX_POWER; midLineResolutionPower++) {
-        def sampleCount = Math.max(line1.numPoints, line2.numPoints) * (2 ^ midLineResolutionPower)
+        def sampleCount = Math.max(line1.numPoints, line2.numPoints) * (2 ** midLineResolutionPower)
         print('Trying to create a capsule midline with resolution power ' + midLineResolutionPower + ', sampleCount ' + sampleCount)
         def midpoints = [refLineStart]
 
@@ -352,6 +353,121 @@ Geometry createMidlineStringV2(Geometry line1, Geometry line2) {
     return midLine
 }
 
+Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleGeometry) {
+    if (!(line1 instanceof LineString)) {
+        throw new IllegalArgumentException("line1 must be a LineString")
+    }
+    if (!(line2 instanceof LineString)) {
+        throw new IllegalArgumentException("line2 must be a LineString")
+    }
+
+    def geomFactory = line1.getFactory()
+    // First, we create straight line between the start and end of a line that is between the midpoints between the start and end of the two lines
+
+    def line2StartPoint = line2.getStartPoint()
+    def line2EndPoint = line2.getEndPoint()
+
+    def line1StartPoint = line1.getStartPoint()
+    def line1XCoefficient = line1.getPointN(1).getX() - line1.getPointN(0).getX()
+    def line1EndPoint = line1.getEndPoint()
+    if (line2StartPoint.distance(line1StartPoint) > line2EndPoint.distance(line1StartPoint)) {
+        line2StartPoint = line2EndPoint
+        line2EndPoint = line2.getStartPoint()
+    }
+    def linesStartXDiff = line2StartPoint.getX() - line1StartPoint.getX()
+    def linesStartYDiff = line2StartPoint.getY() - line1StartPoint.getY()
+    def xCoefficient = linesStartYDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
+    def yCoefficient = linesStartXDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
+    if (Math.abs(xCoefficient - line1XCoefficient) > Math.abs(xCoefficient + line1XCoefficient)) {
+        // Select the direction sense that matches up most with the fist segment of line1
+        xCoefficient = -xCoefficient
+        yCoefficient = -yCoefficient
+    }
+    // Then we create a LengthIndexedLine from the reference line
+    def midLineStart = new Coordinate((line1StartPoint.x + line2StartPoint.x) / 2.0, (line1StartPoint.y + line2StartPoint.y) / 2.0)
+    def MAX_POWER = 0
+    Geometry midLine = null
+    def annotations = []
+    def refLinePoints = Math.max(line1.numPoints, line2.numPoints)
+
+    for (int midLineResolutionPower = 0; midLineResolutionPower <= MAX_POWER; midLineResolutionPower++) {
+        def sampleCount = refLinePoints * (2 ** midLineResolutionPower) / 5
+        def partSize = 2 * line1.getLength() / sampleCount
+        print('Trying to create a capsule midline with resolution power ' + midLineResolutionPower + ', sampleCount ' + sampleCount)
+        def midPoints = [midLineStart]
+        xCoefficient = linesStartYDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
+        yCoefficient = linesStartXDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
+        // We loop over the sampleCount,
+        for (int i = 0; i <= sampleCount; i++) {
+            def prev = midPoints.last
+            def newPoint = new Coordinate(prev.getX() + xCoefficient * partSize, prev.getY() + yCoefficient * partSize)
+            def (newMidPoint) = findNewMidPoint(prev, newPoint, line1, line2, geomFactory, annotations, i)
+            if (newMidPoint !== newPoint) {
+                print("Coefficients updated from [${xCoefficient}] [${yCoefficient}]")
+                double newXDiff = newMidPoint.getX() - prev.getX()
+                double newYDiff = newMidPoint.getY() - prev.getY()
+                xCoefficient = newXDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
+                yCoefficient = newYDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
+                print("Coefficients updated to [${xCoefficient}] [${yCoefficient}]")
+            }
+            midPoints << newMidPoint
+        }
+//        addObjects(annotations)
+//        midPoints << refLineEnd
+        if (midPoints.size() >= 2) {
+            midLine = geomFactory.createLineString(midPoints as Coordinate[])
+            if (!midLine.intersects(line1) && !midLine.intersects(line2)) {
+                return midLine
+            }
+        }
+        // If the midline intersects the lines, we need to try again with a higher resolution
+    }
+    return midLine
+}
+
+def List<Coordinate> findNewMidPoint(Coordinate prev, Coordinate newPoint, LineString line1, LineString line2, GeometryFactory geomFactory, ArrayList<PathObject> annotations, int i) {
+    def orthLength = line1.length
+    double newXDiff = newPoint.getX() - prev.getX()
+    double newYDiff = newPoint.getY() - prev.getY()
+    if (newXDiff.isInfinite() || newYDiff.isInfinite() || newXDiff.isNaN() || newYDiff.isNaN()) {
+        print('newPoint.getY()' + newPoint.getY() + ', i' + i)
+        print('prev.getY()' + prev.getY() + ', i' + i)
+        print('new newYDiff:' + newYDiff)
+        throw new RuntimeException('Bad distances')
+    }
+    xCoefficient = newXDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
+    yCoefficient = newYDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
+    try {
+        def xDirOrthogonal = yCoefficient
+        def yDirOrthogonal = -xCoefficient
+        def firstOrthStart = new Coordinate(newPoint.x - xDirOrthogonal * orthLength, newPoint.y - yDirOrthogonal * orthLength)
+        def firstOrthEnd = new Coordinate(newPoint.x + xDirOrthogonal * orthLength, newPoint.y + yDirOrthogonal * orthLength)
+
+        annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(newPoint)), "00_debug_point_start_" + i, makeRGB(255, 50, 50))
+        LineString orthogonalLine = geomFactory.createLineString([firstOrthStart, firstOrthEnd] as Coordinate[])
+        annotations << getAnnotation(GeometryTools.geometryToROI(orthogonalLine), "00_debug_orth_" + i, makeRGB(20, 20, 20))
+        def p1 = selectClosestPoint(line1.intersection(orthogonalLine), newPoint)
+        annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(p1)), "00_debug_p1_" + i, makeRGB(255, 50, 50))
+        def p2 = selectClosestPoint(line2.intersection(orthogonalLine), newPoint)
+        annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(p2)), "00_debug_p2_" + i, makeRGB(255, 50, 50))
+        if (p1 == null || p2 == null) {
+            // This is the case of orthogonal line on the edges that is not intersecting one of the 2 lines, this is normal
+            print("SKIPPING point $i, no intersection found p1 [$p1] p2 [$p2]")
+        } else {
+            skippedPoints = 0
+            // Calculate the midpoint
+            newMidPoint = new Coordinate((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0)
+            annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(newMidPoint)), "00_debug_newMid" + i, makeRGB(255, 50, 50))
+            return  [newMidPoint]
+        }
+    } catch (Exception e) {
+        print('WARN: error while trying to find new midpoint ignored')
+        print('WARN: ' + e.message)
+    }
+    return [newPoint]
+}
+
+
 Geometry mergeGeometries(List<Geometry> geometries) {
     if (geometries.size() == 0) {
         return null
@@ -361,4 +477,26 @@ Geometry mergeGeometries(List<Geometry> geometries) {
         merged = merged.union(geometries[i])
     }
     return merged
+}
+
+Coordinate selectClosestPoint(Geometry geometry, Coordinate other) {
+    def closestDist = Double.POSITIVE_INFINITY
+    Coordinate closest = null
+    if (geometry == null) {
+        return null
+    }
+
+    def coordinates = geometry.getCoordinates()
+    for (int i = 0; i < coordinates.length; i++) {
+        print('loop i ' + i)
+        def option = coordinates[i]
+        def newDist = Math.abs(option.distance(other))
+        print('loop newDist ' + newDist)
+        if (closestDist > newDist) {
+            print('loop closestDist ' + newDist)
+            closestDist = newDist
+            closest = option
+        }
+    }
+    return closest
 }
