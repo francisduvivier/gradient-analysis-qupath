@@ -86,7 +86,7 @@ def annotateHalfWithExpansions(String name, ROI startPolygon, ROI intersectingPo
         def intersection = expansionBand.intersection(intersectingPolygon.geometry)
 
         def bandColor = makeRGB(20 * i, 40 * i, 200 - 30 * i)
-        newAnnotations << getAnnotation(toRoi(intersection, startPolygon.imagePlane), "${name}_${String.format('%04d', totalMicrons)}µm", bandColor)
+        newAnnotations << getAnnotation(toRoi(intersection), "${name}_${String.format('%04d', totalMicrons)}µm", bandColor)
     }
     return [prevExpansion, newAnnotations]
 }
@@ -151,14 +151,14 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     def tumors = halvesGeometries.findAll { isTumor(it) }.sort { it.area }
 
     if (tumors.size() === 0) {
-        addObjects(halvesGeometries.collect { getAnnotation(toRoi(it, tissue.ROI.imagePlane), "00_debug_tissue_without_tumor_halves", makeRGB(255, 50, 50)) })
+        addObjects(halvesGeometries.collect { getAnnotation(toRoi(it), "00_debug_tissue_without_tumor_halves", makeRGB(255, 50, 50)) })
         throw new LocalRuntimeException("No `Tumor` annotation found within the bounds of tissue [${tissue?.getID()}], please add an annotation with `Tumor` classification manually within one the tissue somewhere.")
     }
     def tumor = tumors.last
     if (tissueSplitLines.size() == 1) {
         if (halvesGeometries.size() !== 2) {
             if (halvesGeometries.size() < 2 || REJECT_DIRTY_ANNOTATIONS()) {
-                addObjects(halvesGeometries.collect { getAnnotation(toRoi(it, tissue.ROI.imagePlane), "00_debug", makeRGB(255, 50, 50)) })
+                addObjects(halvesGeometries.collect { getAnnotation(toRoi(it), "00_debug", makeRGB(255, 50, 50)) })
                 throw new LocalRuntimeException("Expected 2 halves, but got ${halvesGeometries.size()}, please check the 00_debug annotation, probably the smallest one is the issue")
             } else {
                 print("WARNING: Expected 2 halves, but got ${halvesGeometries.size()}, this could give weird results, please check the annotations, setting REJECT_DIRTY_ANNOTATIONS to true can help with that.")
@@ -169,13 +169,13 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
         def ignoredGeometries = halvesGeometries.findAll { ![liver, tumor].contains(it) }
         annotateIgnoredGeometries(ignoredGeometries, tissue)
 
-        return [liver, tumor].collect { toRoi(it, tissue.ROI.imagePlane) }
+        return [liver, tumor].collect { toRoi(it) }
     }
 
     // We have more than 1 line, we need to find the capsule
     if (halvesGeometries.size() !== 3) {
         if (halvesGeometries.size() < 3 || REJECT_DIRTY_ANNOTATIONS()) {
-            addObjects(halvesGeometries.collect { getAnnotation(toRoi(it, tissue.ROI.imagePlane), "00_debug", makeRGB(255, 50, 50)) })
+            addObjects(halvesGeometries.collect { getAnnotation(toRoi(it), "00_debug", makeRGB(255, 50, 50)) })
             throw new LocalRuntimeException("Expected 3 halves, but got ${halvesGeometries.size()}")
         } else {
             print("WARNING: Expected 3 halves, but got ${halvesGeometries.size()}, this could give weird results, please check the annotations, setting REJECT_DIRTY_ANNOTATIONS to true can help with that.")
@@ -191,11 +191,11 @@ Tuple<ROI> getSeparatedTissueParts(TissueWithLines tissueAndLines) {
     def liver = halvesGeometries.findAll { !isTumor(it) && !capsuleGeometries.contains(it) }.sort { it.area }.last
     def ignoredGeometries = halvesGeometries.findAll { !([liver, tumor] + capsuleGeometries).contains(it) }
     annotateIgnoredGeometries(ignoredGeometries, tissue)
-    return [liver, tumor, capsule].collect { toRoi(it, tissue.ROI.imagePlane) }
+    return [liver, tumor, capsule].collect { toRoi(it) }
 }
 
 void annotateIgnoredGeometries(List<Geometry> ignoredGeometries, tissue) {
-    def annotations = ignoredGeometries.collect { getAnnotation(toRoi(it, tissue.ROI.imagePlane), "00_ignored", makeRGB(200, 0, 100)) }
+    def annotations = ignoredGeometries.collect { getAnnotation(toRoi(it), "00_ignored", makeRGB(200, 0, 100)) }
     addObjects(annotations.findAll { it.ROI.isLine() || it.ROI.getArea() > 0 })
 }
 
@@ -228,7 +228,7 @@ boolean isTumor(Geometry geom) {
 
 ROI createCentralROI(ROI startRoi, Geometry biggestExpansion) {
     def centralGeometry = startRoi.geometry.difference(biggestExpansion)
-    return toRoi(centralGeometry, startRoi.imagePlane)
+    return toRoi(centralGeometry)
 }
 
 void cleanupAutoAnnotations() {
@@ -244,7 +244,7 @@ ROI unionROI(ROI roi1, ROI roi2) {
     if (roi1 == null) {
         return roi2
     }
-    return toRoi(roi1.geometry.union(roi2.geometry), roi1.imagePlane)
+    return toRoi(roi1.geometry.union(roi2.geometry))
 }
 
 Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI tumor) {
@@ -276,7 +276,7 @@ Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI t
         if (liverCapsule == null) {
             throw new LocalRuntimeException('Expected (liverCapsule != null)')
         }
-        return [midline, liverCapsule, tumorCapsule].collect { toRoi(it, capsule.imagePlane) }
+        return [midline, liverCapsule, tumorCapsule].collect { toRoi(it) }
     } catch (e) {
         addDebugAnnotations(tumorLine, liverLine, midline, capsule)
         throw e
@@ -288,7 +288,7 @@ def addDebugAnnotations(PathObject tumorLine, PathObject liverLine, Geometry mid
     debugAnnotations << getAnnotation(tumorLine.ROI, "00_debug_tumorLine", makeRGB(255, 50, 50))
     debugAnnotations << getAnnotation(liverLine.ROI, "00_debug_liverLine", makeRGB(255, 50, 50))
     if (midline !== null) {
-        debugAnnotations << getAnnotation(toRoi(midline, capsule.imagePlane), "00_debug_midline", makeRGB(255, 50, 50))
+        debugAnnotations << getAnnotation(toRoi(midline), "00_debug_midline", makeRGB(255, 50, 50))
     }
     debugAnnotations << getAnnotation(capsule, "00_debug_capsuleGeometry", makeRGB(255, 50, 50))
     addObjects(debugAnnotations)
@@ -343,7 +343,7 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
             def prev = midPoints.last
             def newPoint = new Coordinate(prev.getX() + xCoefficient * partSize, prev.getY() + yCoefficient * partSize)
 
-            annotations << getAnnotation(toRoi(geomFactory.createPoint(newPoint) as Geometry), "00_debug_point_start_" + i, ColorTools.makeRGBA(20, 20, 20, 100))
+            annotations << getAnnotation(toRoi(geomFactory.createPoint(newPoint)), "00_debug_point_start_" + i, ColorTools.makeRGBA(20, 20, 20, 100))
 
             def (newMidPoint) = findNewMidPoint(prev, newPoint, line1, line2, geomFactory, annotations, i, capsuleGeometry)
             def insideToOutsideCapsule = capsuleGeometry.contains(geomFactory.createPoint(prev)) && !capsuleGeometry.contains(geomFactory.createPoint(newMidPoint))
