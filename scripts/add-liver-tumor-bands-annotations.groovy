@@ -48,7 +48,9 @@ def main() {
 }
 
 def DEBUG_MODE() { return false }
+
 def DEBUG_MODE_CAPSULE_DIRECTIONS() { return false }
+
 def VISUALIZE_PATH_FINDING() { return true }
 
 def createGradientAnnotations(TissueWithLines tissueAndLines, int coreIndex, List<Integer> liverBands, List<Integer> tumorBands) {
@@ -337,7 +339,7 @@ Geometry createMidlineStringV4(Geometry line1, Geometry line2, Geometry capsuleG
     List<PathObject> segmentAnnotations = []
     Collection<PathObject> renderedSegments = []
     for (int midLineResolutionPower = 0; midLineResolutionPower <= MAX_POWER; midLineResolutionPower++) {
-        def sampleCount = refLinePoints * (2**(midLineResolutionPower - 4))
+        def sampleCount = refLinePoints * (2**(midLineResolutionPower - 3))
         def partSize = 2 * line1.getLength() / sampleCount
         print('Trying to create a capsule midline with resolution power ' + midLineResolutionPower + ', sampleCount ' + sampleCount)
         def midPoints = [midLineStart]
@@ -356,8 +358,10 @@ Geometry createMidlineStringV4(Geometry line1, Geometry line2, Geometry capsuleG
 
                 def newPointIsOutside = !capsuleGeometry.contains(geomFactory.createPoint(newMidPoint))
                 def insideToOutsideCapsule = capsuleGeometry.contains(geomFactory.createPoint(prev)) && newPointIsOutside
-                segmentAnnotations << getAnnotation(toRoi(geomFactory.createLineString([prev, newMidPoint] as Coordinate[])),
-                        "00_debug_seg_" + i, ColorTools.makeRGBA(20, 20, 100, 100))
+                if (VISUALIZE_PATH_FINDING()) segmentAnnotations << getAnnotation(toRoi(geomFactory.createLineString([prev, newMidPoint] as Coordinate[])),
+                        "00_debug_seg_" + i, ColorTools.makeRGBA(i % 2 == 0 ? 255 : 0, i % 2 == 0 ? 255 : 0, i % 2 == 0 ? 255 : 0, 255)
+                )
+
 
                 if (newMidPoint !== null) {
 //                print("Coefficients updated from [${xCoefficient}] [${yCoefficient}]")
