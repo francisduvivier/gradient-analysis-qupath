@@ -12,9 +12,11 @@ import qupath.lib.regions.ImagePlane
 import qupath.lib.roi.interfaces.ROI
 import qupath.lib.roi.GeometryTools
 
+import static qupath.lib.scripting.QP.addObject
 import static qupath.lib.scripting.QP.addObjects
 import static qupath.lib.scripting.QP.getAnnotationObjects
 import static qupath.lib.scripting.QP.getCurrentImageData
+import static qupath.lib.scripting.QP.removeObjects
 
 print('START: main')
 main()
@@ -141,7 +143,7 @@ PathObject getAnnotation(ROI roi, String name, Integer color = makeRGB(255, 255,
         print "Removing existing annotation [$name]"
         removeObject(existing, false)
     }
-    print "Successfully added ROI [$name] annotation"
+//    print "Successfully added ROI [$name] annotation"
     return newAnnotation
 }
 
@@ -310,10 +312,8 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
 
     def line1StartPoint = line1.getStartPoint()
     def line1XCoefficient = line1.getPointN(1).getX() - line1.getPointN(0).getX()
-    def line1EndPoint = line1.getEndPoint()
     if (line2StartPoint.distance(line1StartPoint) > line2EndPoint.distance(line1StartPoint)) {
         line2StartPoint = line2EndPoint
-        line2EndPoint = line2.getStartPoint()
     }
     def linesStartXDiff = line2StartPoint.getX() - line1StartPoint.getX()
     def linesStartYDiff = line2StartPoint.getY() - line1StartPoint.getY()
@@ -326,13 +326,14 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
     }
     // Then we create a LengthIndexedLine from the reference line
     def midLineStart = new Coordinate((line1StartPoint.x + line2StartPoint.x) / 2.0, (line1StartPoint.y + line2StartPoint.y) / 2.0)
-    def MAX_POWER = 4
+    def MAX_POWER = 0
     Geometry midLine = null
     def annotations = []
     def refLinePoints = Math.max(line1.numPoints, line2.numPoints)
-
+    List<PathObject> segmentAnnotations = []
+    List<PathObject> renderedSegments = []
     for (int midLineResolutionPower = 0; midLineResolutionPower <= MAX_POWER; midLineResolutionPower++) {
-        def sampleCount = refLinePoints * (2**(midLineResolutionPower - 2))
+        def sampleCount = refLinePoints * (2**(midLineResolutionPower))
         def partSize = 2 * line1.getLength() / sampleCount
         print('Trying to create a capsule midline with resolution power ' + midLineResolutionPower + ', sampleCount ' + sampleCount)
         def midPoints = [midLineStart]
@@ -340,27 +341,38 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
         yCoefficient = linesStartXDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
         // We loop over the sampleCount,
         for (int i = 0; i <= sampleCount; i++) {
+            if ((i % 10) == 0) Thread.sleep(0) // Enable killing the process for if it takes too long
+
             def prev = midPoints.last
+            def prevPrev = midPoints.size() == 1 ? prev : midPoints[midPoints.size() - 2]
             def newPoint = new Coordinate(prev.getX() + xCoefficient * partSize, prev.getY() + yCoefficient * partSize)
 
             annotations << getAnnotation(toRoi(geomFactory.createPoint(newPoint)), "00_debug_point_start_" + i, ColorTools.makeRGBA(20, 20, 20, 100))
 
-            def (newMidPoint) = findNewMidPoint(prev, newPoint, line1, line2, geomFactory, annotations, i, capsuleGeometry)
+            def newMidPoint = findNewMidPoint(prevPrev, newPoint, line1, line2, geomFactory, annotations, i)
             def insideToOutsideCapsule = capsuleGeometry.contains(geomFactory.createPoint(prev)) && !capsuleGeometry.contains(geomFactory.createPoint(newMidPoint))
-            addObject(getAnnotation(toRoi(geomFactory.createLineString([prev, newMidPoint] as Coordinate[])), "00_debug_seg" + i, ColorTools.makeRGBA(20, 20, 20, 100)))
-            if (newMidPoint !== newPoint) {
-                print("Coefficients updated from [${xCoefficient}] [${yCoefficient}]")
+            segmentAnnotations << getAnnotation(toRoi(geomFactory.createLineString([prev, newMidPoint] as Coordinate[])),
+                    "00_debug_seg_" + i, ColorTools.makeRGBA(20, 20, 100, 100))
+
+            if (newMidPoint !== null) {
+//                print("Coefficients updated from [${xCoefficient}] [${yCoefficient}]")
                 double newXDiff = newMidPoint.getX() - prev.getX()
                 double newYDiff = newMidPoint.getY() - prev.getY()
                 xCoefficient = newXDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
                 yCoefficient = newYDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
-                print("Coefficients updated to [${xCoefficient}] [${yCoefficient}]")
+//                print("Coefficients updated to [${xCoefficient}] [${yCoefficient}]")
             }
             midPoints << newMidPoint
             if (insideToOutsideCapsule) {
                 break
             }
+            if (i % 10 == 0) {
+                addObjects(segmentAnnotations)
+                renderedSegments.addAll(segmentAnnotations)
+                segmentAnnotations.clear()
+            }
         }
+        removeObjects(renderedSegments)
         if (DEBUG_MODE()) addObjects(annotations)
 //        midPoints << refLineEnd
         if (midPoints.size() >= 2) {
@@ -379,8 +391,13 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
     return midLine
 }
 
-List<Coordinate> findNewMidPoint(Coordinate prev, Coordinate newPoint, LineString line1, LineString line2, GeometryFactory geomFactory, ArrayList<PathObject> annotations, int i, Geometry capsule) {
-    def orthLength = line1.length
+double calculateAngleDegrees(double opposite, double adjacent) {
+    double radians = Math.atan(opposite / adjacent)
+    return Math.toDegrees(radians)
+}
+
+Coordinate findNewMidPoint(Coordinate prev, Coordinate newPoint, LineString line1, LineString line2, GeometryFactory geomFactory, ArrayList<PathObject> annotations, int i) {
+    def crossLineLength = line1.length
     double newXDiff = newPoint.getX() - prev.getX()
     double newYDiff = newPoint.getY() - prev.getY()
     if (newXDiff.isInfinite() || newYDiff.isInfinite() || newXDiff.isNaN() || newYDiff.isNaN()) {
@@ -389,25 +406,12 @@ List<Coordinate> findNewMidPoint(Coordinate prev, Coordinate newPoint, LineStrin
         print('new newYDiff:' + newYDiff)
         throw new RuntimeException('Bad distances')
     }
-    xCoefficient = newXDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
-    yCoefficient = newYDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
     try {
-        def (Coordinate p1, Coordinate p2) = findFindShortestLine(newPoint, orthLength, geomFactory, annotations, i, line1, line2, capsule)
-        annotations << getAnnotation(toRoi(geomFactory.createPoint(p1)), "00_debug_p1_" + i, makeRGB(255, 50, 50))
-        annotations << getAnnotation(toRoi(geomFactory.createPoint(p2)), "00_debug_p2_" + i, makeRGB(255, 50, 50))
-        if (p1 == null || p2 == null) {
-            // This is the case of orthogonal line on the edges that is not intersecting one of the 2 lines, this is normal
-            print("SKIPPING point $i, no intersection found p1 [$p1] p2 [$p2]")
-            return [newPoint]
-        } else {
-            LineString crossLine = geomFactory.createLineString([p1, p2] as Coordinate[])
-//            annotations << getAnnotation(toRoi(crossLine), "00_debug_cross_" + i, ColorTools.makeRGBA(20, 20, 20, 75))
-            addObject(getAnnotation(toRoi(crossLine), "00_debug_cross_" + i, ColorTools.makeRGBA(20, 20, 20, 75)))
-            // Calculate the midpoint
-            def newMidPoint = crossLine.centroid
-            annotations << getAnnotation(toRoi(newMidPoint), "00_debug_newMid" + i, makeRGB(255, 50, 50))
-            return [crossLine.centroid.coordinate]
-        }
+        def prevAngle = (int) calculateAngleDegrees(-newYDiff, newXDiff)
+        def betterPoint = findBestNewPoint(newPoint, crossLineLength, prevAngle, geomFactory, line1, line2, i)
+//        annotations << getAnnotation(toRoi(geomFactory.createPoint(p1)), "00_debug_p1_" + i, makeRGB(255, 50, 50))
+//        annotations << getAnnotation(toRoi(geomFactory.createPoint(p2)), "00_debug_p2_" + i, makeRGB(255, 50, 50))
+        return betterPoint
     } catch (LocalRuntimeException e) {
         print('ERROR: error while trying to find new midpoint')
         print('ERROR: ' + e.message)
@@ -415,32 +419,55 @@ List<Coordinate> findNewMidPoint(Coordinate prev, Coordinate newPoint, LineStrin
             throw e
         }
         print('WARN: ignoring error above')
-        return [newPoint]
     }
 }
 
-def List findFindShortestLine(Coordinate newPoint, double orthLength, GeometryFactory geomFactory, ArrayList<PathObject> annotations, int i, LineString line1, LineString line2, Geometry capsule) {
+Coordinate findBestNewPoint(Coordinate newPoint, double orthLength, int prevAngle, GeometryFactory geomFactory, LineString line1, LineString line2, int i) {
     def minCrossLength = orthLength
     Tuple<Coordinate> bestPoints = [null, null]
-    for (int angle = 0; angle < 360; angle++) {
-        def xDir = Math.sin(angle * 2f * Math.PI / 360f)
-        def yDir = Math.cos(angle * 2f * Math.PI / 360f)
-        def firstOrthStart = new Coordinate(newPoint.x - xDir * orthLength, newPoint.y - yDir * orthLength)
-        def firstOrthEnd = new Coordinate(newPoint.x + xDir * orthLength, newPoint.y + yDir * orthLength)
+    def ANGLE_STEP_SIZE = 20
+    def MAX_ANGLE_DIFF = 80
+    List<PathObject> ann = []
+    for (int dir = -1; dir <= 1; dir += 2) {
+        for (int angleDiff = 0; angleDiff <= MAX_ANGLE_DIFF; angleDiff += ANGLE_STEP_SIZE) {
+            angle = prevAngle + angleDiff * dir
+            def xDir = Math.sin(angle * 2f * Math.PI / 360f)
+            def yDir = Math.cos(angle * 2f * Math.PI / 360f)
+            def firstOrthStart = new Coordinate(newPoint.x - xDir * orthLength, newPoint.y - yDir * orthLength)
+            def firstOrthEnd = new Coordinate(newPoint.x + xDir * orthLength, newPoint.y + yDir * orthLength)
 
-        LineString orthogonalLine = geomFactory.createLineString([firstOrthStart, firstOrthEnd] as Coordinate[])
-//        annotations << getAnnotation(toRoi(orthogonalLine), "00_debug_orth_" + i, ColorTools.makeRGBA(20, 20, 20, 75))
-        def p1 = selectClosestPoint(line1.intersection(orthogonalLine), newPoint)
-        def p2 = selectClosestPoint(line2.intersection(orthogonalLine), newPoint)
-        if (p1 != null && p2 != null) {
-            def crossLength = p1.distance(newPoint) + p2.distance(newPoint)
-            if (crossLength < minCrossLength) {
-                minCrossLength = crossLength
-                bestPoints = [p1, p2]
+            LineString orthogonalLine = geomFactory.createLineString([firstOrthStart, firstOrthEnd] as Coordinate[])
+            if (DEBUG_MODE_CAPSULE_DIRECTIONS()) ann << getAnnotation(toRoi(orthogonalLine), "00_debug_direction_i${i}_a$angle", ColorTools.makeRGBA(20, 20, 20, 75))
+
+            def p1 = selectClosestPoint(line1.intersection(orthogonalLine), newPoint)
+            def p2 = selectClosestPoint(line2.intersection(orthogonalLine), newPoint)
+            if (p1 != null && p2 != null) {
+                def p1Dist = Math.abs(p1.distance(newPoint))
+                def p2Dist = Math.abs(p2.distance(newPoint))
+                def crossLength = p1Dist + p2Dist
+                if (crossLength < minCrossLength) {
+                    minCrossLength = crossLength
+                    bestPoints = [p1, p2]
+                }
             }
         }
     }
-    return bestPoints
+    if (DEBUG_MODE()) addObjects(ann)
+    def (p1, p2) = bestPoints
+    if (p1 == null || p2 == null) {
+        // This is the case of orthogonal line on the edges that is not intersecting one of the 2 lines, this is normal
+        print("SKIPPING point $i, no intersection found p1 [$p1] p2 [$p2]")
+        return null
+    } else {
+        LineString crossLine = geomFactory.createLineString([p1, p2] as Coordinate[])
+//            annotations << getAnnotation(toRoi(crossLine), "00_debug_cross_" + i, ColorTools.makeRGBA(20, 20, 20, 75))
+        if (DEBUG_MODE()) {
+            addObject(getAnnotation(toRoi(crossLine), "00_debug_cross_" + i, ColorTools.makeRGBA(20, 60, 20, 75)))
+        }   // Calculate the midpoint
+        def newMidPoint = crossLine.centroid
+//        annotations << getAnnotation(toRoi(newMidPoint), "00_debug_newMid" + i, makeRGB(255, 50, 50))
+        return newMidPoint.coordinate
+    }
 }
 
 
