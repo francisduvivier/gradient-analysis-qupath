@@ -320,7 +320,7 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
     }
     // Then we create a LengthIndexedLine from the reference line
     def midLineStart = new Coordinate((line1StartPoint.x + line2StartPoint.x) / 2.0, (line1StartPoint.y + line2StartPoint.y) / 2.0)
-    def MAX_POWER = 0
+    def MAX_POWER = 5
     Geometry midLine = null
     def annotations = []
     def refLinePoints = Math.max(line1.numPoints, line2.numPoints)
@@ -366,7 +366,7 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
     return midLine
 }
 
-def List<Coordinate> findNewMidPoint(Coordinate prev, Coordinate newPoint, LineString line1, LineString line2, GeometryFactory geomFactory, ArrayList<PathObject> annotations, int i, Geometry capsule) {
+List<Coordinate> findNewMidPoint(Coordinate prev, Coordinate newPoint, LineString line1, LineString line2, GeometryFactory geomFactory, ArrayList<PathObject> annotations, int i, Geometry capsule) {
     def orthLength = line1.length
     double newXDiff = newPoint.getX() - prev.getX()
     double newYDiff = newPoint.getY() - prev.getY()
