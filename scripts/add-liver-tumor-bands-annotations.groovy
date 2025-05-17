@@ -47,7 +47,9 @@ def main() {
 
 }
 
-def DEBUG_MODE() { return false }
+def DEBUG_MODE() { return false } // local change
+
+def DEBUG_MODE_CAPSULE_DIRECTIONS() { return false } // local change
 
 def createGradientAnnotations(TissueWithLines tissueAndLines, int coreIndex, List<Integer> liverBands, List<Integer> tumorBands) {
     List<PathObject> tissueAnnotations = []
