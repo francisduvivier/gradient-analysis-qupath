@@ -41,7 +41,7 @@ def main() {
 
 }
 
-def DEBUG_MODE() { return false }
+def DEBUG_MODE() { return true }
 
 def createGradientAnnotations(TissueWithLines tissueAndLines, int coreIndex, List<Integer> liverBands, List<Integer> tumorBands) {
     def (liver, tumor, capsule) = getSeparatedTissueParts(tissueAndLines)
@@ -320,13 +320,13 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
     }
     // Then we create a LengthIndexedLine from the reference line
     def midLineStart = new Coordinate((line1StartPoint.x + line2StartPoint.x) / 2.0, (line1StartPoint.y + line2StartPoint.y) / 2.0)
-    def MAX_POWER = 5
+    def MAX_POWER = 0
     Geometry midLine = null
     def annotations = []
     def refLinePoints = Math.max(line1.numPoints, line2.numPoints)
 
     for (int midLineResolutionPower = 0; midLineResolutionPower <= MAX_POWER; midLineResolutionPower++) {
-        def sampleCount = refLinePoints * (2**midLineResolutionPower) / 5
+        def sampleCount = refLinePoints * (2**(midLineResolutionPower - 1))
         def partSize = 2 * line1.getLength() / sampleCount
         print('Trying to create a capsule midline with resolution power ' + midLineResolutionPower + ', sampleCount ' + sampleCount)
         def midPoints = [midLineStart]
@@ -340,6 +340,7 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
 
             def (newMidPoint) = findNewMidPoint(prev, newPoint, line1, line2, geomFactory, annotations, i, capsuleGeometry)
             def insideToOutsideCapsule = capsuleGeometry.contains(geomFactory.createPoint(prev)) && !capsuleGeometry.contains(geomFactory.createPoint(newMidPoint))
+            addObject(getAnnotation(GeometryTools.geometryToROI(geomFactory.createLineString([prev, newMidPoint] as Coordinate[])), "00_debug_seg" + i, ColorTools.makeRGBA(20, 20, 20, 100)))
             if (newMidPoint !== newPoint) {
                 print("Coefficients updated from [${xCoefficient}] [${yCoefficient}]")
                 double newXDiff = newMidPoint.getX() - prev.getX()
@@ -388,7 +389,8 @@ List<Coordinate> findNewMidPoint(Coordinate prev, Coordinate newPoint, LineStrin
             return [newPoint]
         } else {
             LineString crossLine = geomFactory.createLineString([p1, p2] as Coordinate[])
-            annotations << getAnnotation(GeometryTools.geometryToROI(crossLine), "00_debug_cross_" + i, ColorTools.makeRGBA(20, 20, 20, 75))
+//            annotations << getAnnotation(GeometryTools.geometryToROI(crossLine), "00_debug_cross_" + i, ColorTools.makeRGBA(20, 20, 20, 75))
+            addObject(getAnnotation(GeometryTools.geometryToROI(crossLine), "00_debug_cross_" + i, ColorTools.makeRGBA(20, 20, 20, 75)))
             // Calculate the midpoint
             def newMidPoint = crossLine.centroid
             annotations << getAnnotation(GeometryTools.geometryToROI(newMidPoint), "00_debug_newMid" + i, makeRGB(255, 50, 50))
@@ -419,7 +421,7 @@ def List findFindShortestLine(Coordinate newPoint, double orthLength, GeometryFa
         def p1 = selectClosestPoint(line1.intersection(orthogonalLine), newPoint)
         def p2 = selectClosestPoint(line2.intersection(orthogonalLine), newPoint)
         if (p1 != null && p2 != null) {
-            def crossLength = p1.distance(p2)
+            def crossLength = p1.distance(newPoint) + p2.distance(newPoint)
             if (crossLength < minCrossLength) {
                 minCrossLength = crossLength
                 bestPoints = [p1, p2]
