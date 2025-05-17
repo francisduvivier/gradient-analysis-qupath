@@ -401,7 +401,9 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
         for (int i = 0; i <= sampleCount; i++) {
             def prev = midPoints.last
             def newPoint = new Coordinate(prev.getX() + xCoefficient * partSize, prev.getY() + yCoefficient * partSize)
-            def (newMidPoint) = findNewMidPoint(prev, newPoint, line1, line2, geomFactory, annotations, i)
+            annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(newPoint)), "00_debug_point_start_" + i, makeRGB(255, 50, 50))
+
+            def (newMidPoint) = findNewMidPoint(prev, newPoint, line1, line2, geomFactory, annotations, i, capsuleGeometry)
             if (newMidPoint !== newPoint) {
                 print("Coefficients updated from [${xCoefficient}] [${yCoefficient}]")
                 double newXDiff = newMidPoint.getX() - prev.getX()
@@ -425,7 +427,7 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
     return midLine
 }
 
-def List<Coordinate> findNewMidPoint(Coordinate prev, Coordinate newPoint, LineString line1, LineString line2, GeometryFactory geomFactory, ArrayList<PathObject> annotations, int i) {
+def List<Coordinate> findNewMidPoint(Coordinate prev, Coordinate newPoint, LineString line1, LineString line2, GeometryFactory geomFactory, ArrayList<PathObject> annotations, int i, Geometry capsule) {
     def orthLength = line1.length
     double newXDiff = newPoint.getX() - prev.getX()
     double newYDiff = newPoint.getY() - prev.getY()
@@ -440,23 +442,14 @@ def List<Coordinate> findNewMidPoint(Coordinate prev, Coordinate newPoint, LineS
     try {
         def xDirOrthogonal = yCoefficient
         def yDirOrthogonal = -xCoefficient
-        def firstOrthStart = new Coordinate(newPoint.x - xDirOrthogonal * orthLength, newPoint.y - yDirOrthogonal * orthLength)
-        def firstOrthEnd = new Coordinate(newPoint.x + xDirOrthogonal * orthLength, newPoint.y + yDirOrthogonal * orthLength)
-
-        annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(newPoint)), "00_debug_point_start_" + i, makeRGB(255, 50, 50))
-        LineString orthogonalLine = geomFactory.createLineString([firstOrthStart, firstOrthEnd] as Coordinate[])
-        annotations << getAnnotation(GeometryTools.geometryToROI(orthogonalLine), "00_debug_orth_" + i, makeRGB(20, 20, 20))
-        def p1 = selectClosestPoint(line1.intersection(orthogonalLine), newPoint)
-        annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(p1)), "00_debug_p1_" + i, makeRGB(255, 50, 50))
-        def p2 = selectClosestPoint(line2.intersection(orthogonalLine), newPoint)
-        annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(p2)), "00_debug_p2_" + i, makeRGB(255, 50, 50))
+        def (Coordinate p1, Coordinate p2) = findFindShortestLine(newPoint, xDirOrthogonal, orthLength, yDirOrthogonal, geomFactory, annotations, i, line1, line2)
         if (p1 == null || p2 == null) {
             // This is the case of orthogonal line on the edges that is not intersecting one of the 2 lines, this is normal
             print("SKIPPING point $i, no intersection found p1 [$p1] p2 [$p2]")
         } else {
             skippedPoints = 0
             // Calculate the midpoint
-            newMidPoint = new Coordinate((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0)
+            def newMidPoint = new Coordinate((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0)
             annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(newMidPoint)), "00_debug_newMid" + i, makeRGB(255, 50, 50))
             return  [newMidPoint]
         }
@@ -465,6 +458,19 @@ def List<Coordinate> findNewMidPoint(Coordinate prev, Coordinate newPoint, LineS
         print('WARN: ' + e.message)
     }
     return [newPoint]
+}
+
+def List findFindShortestLine(Coordinate newPoint, double xDirOrthogonal, double orthLength, double yDirOrthogonal, GeometryFactory geomFactory, ArrayList<PathObject> annotations, int i, LineString line1, LineString line2) {
+    def firstOrthStart = new Coordinate(newPoint.x - xDirOrthogonal * orthLength, newPoint.y - yDirOrthogonal * orthLength)
+    def firstOrthEnd = new Coordinate(newPoint.x + xDirOrthogonal * orthLength, newPoint.y + yDirOrthogonal * orthLength)
+
+    LineString orthogonalLine = geomFactory.createLineString([firstOrthStart, firstOrthEnd] as Coordinate[])
+    annotations << getAnnotation(GeometryTools.geometryToROI(orthogonalLine), "00_debug_orth_" + i, makeRGB(20, 20, 20))
+    def p1 = selectClosestPoint(line1.intersection(orthogonalLine), newPoint)
+    def p2 = selectClosestPoint(line2.intersection(orthogonalLine), newPoint)
+    annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(p1)), "00_debug_p1_" + i, makeRGB(255, 50, 50))
+    annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(p2)), "00_debug_p2_" + i, makeRGB(255, 50, 50))
+    return [p1, p2]
 }
 
 
