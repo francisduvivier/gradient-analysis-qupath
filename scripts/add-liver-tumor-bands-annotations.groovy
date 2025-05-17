@@ -45,7 +45,7 @@ def main() {
 
 }
 
-def DEBUG_MODE() { return true }
+def DEBUG_MODE() { return false }
 
 def createGradientAnnotations(TissueWithLines tissueAndLines, int coreIndex, List<Integer> liverBands, List<Integer> tumorBands) {
     List<PathObject> tissueAnnotations = []
