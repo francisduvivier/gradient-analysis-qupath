@@ -52,7 +52,7 @@ def main() {
 
 def createGradientAnnotations(TissueWithLines tissueAndLines, int coreIndex, List<Integer> liverBands, List<Integer> tumorBands) {
     List<PathObject> tissueAnnotations = []
-    def (ROI liver , ROI tumor , ROI capsule ) = getSeparatedTissueParts(tissueAndLines)
+    def (ROI liver, ROI tumor, ROI capsule) = getSeparatedTissueParts(tissueAndLines)
     tissueAnnotations << getAnnotation(tumor, "${coreIndex}_tumor", makeRGB(150, 150, 0))
     tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
 
@@ -202,7 +202,7 @@ void annotateIgnoredGeometries(List<Geometry> ignoredGeometries) {
     addObjects(annotations.findAll { it.ROI.isLine() || it.ROI.getArea() > 0 })
 }
 
-def ALLOW_NO_CALIBRATION() { return false }
+def ALLOW_NO_CALIBRATION() { return true }
 
 double getDistance(double microns) {
     def imageData = getCurrentImageData()
@@ -351,10 +351,24 @@ List<Point> calcMidline(LineString line1, LineString line2, Geometry capsule) {
         i += 1
         def locationInLine1 = stepSize * i + line1Offset
         def p1 = liLine1.extractPoint(locationInLine1)
-
         def locationInLine2 = stepSize * i + line2Offset
         def p2 = liLine2.extractPoint(locationInLine2)
-        def newMidPoint = midPoint(p1, p2, geomFactory)
+        def crossLine = lineFromCoords([p1, p2] as Coordinate[], geomFactory)
+        def line1Intersections = crossLine.intersection(line1)
+        if (line1Intersections.numPoints > 1) {
+            // take point with closest distance to other side
+            def closestP1 = line1Intersections.getCoordinates().sort {it.distance(p2)}.first()
+            crossLine = lineFromCoords([closestP1, crossLine.getCoordinateN(1)] as Coordinate[], geomFactory)
+        }
+        def line2Intersections = crossLine.intersection(line2)
+
+        if (line2Intersections.numPoints > 1) {
+            // take point with closest distance to other side
+            def closestP2 = line2Intersections.getCoordinates().sort {it.distance(p1)}.first()
+            crossLine = lineFromCoords([crossLine.getCoordinateN(0), closestP2] as Coordinate[], geomFactory)
+        }
+//        addObject(getAnnotation(toRoi(crossLine), 'line ' + i))
+        def newMidPoint = crossLine.centroid
 
         line1Offset += getOffsetToClosestNextPoint(liLine1, locationInLine1, newMidPoint)
         line2Offset += getOffsetToClosestNextPoint(liLine2, locationInLine2, newMidPoint)
@@ -399,6 +413,10 @@ Point midPoint(Coordinate p1, Coordinate p2, GeometryFactory geomFactory) {
 
 LineString lineFromPoints(List<Point> points, GeometryFactory geomFactory) {
     return geomFactory.createLineString(points.collect { it.coordinate } as Coordinate[])
+}
+
+LineString lineFromCoords(Coordinate[] coords, GeometryFactory geomFactory) {
+    return geomFactory.createLineString(coords)
 }
 
 int getOffsetToClosestNextPoint(LengthIndexedLine lengthIndexedLine, double lengthIndex, Point midPoint, double stepSize = 1d) {
