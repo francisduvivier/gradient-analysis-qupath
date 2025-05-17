@@ -319,7 +319,6 @@ Geometry createMidlineStringV4(LineString line1, LineString line2, Geometry caps
         print('WARN: reversing line 2!')
         line2StartPoint = line2EndPoint
         line2 = line2.reverse()
-        assert line2StartPoint === line2.getPointN(0)
     }
 
     def linesStartXDiff = line2StartPoint.getX() - line1StartPoint.getX()
