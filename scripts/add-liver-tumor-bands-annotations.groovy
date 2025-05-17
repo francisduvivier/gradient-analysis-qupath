@@ -326,7 +326,7 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
     }
     // Then we create a LengthIndexedLine from the reference line
     def midLineStart = new Coordinate((line1StartPoint.x + line2StartPoint.x) / 2.0, (line1StartPoint.y + line2StartPoint.y) / 2.0)
-    def MAX_POWER = 1
+    def MAX_POWER = 4
     Geometry midLine = null
     def annotations = []
     def refLinePoints = Math.max(line1.numPoints, line2.numPoints)
