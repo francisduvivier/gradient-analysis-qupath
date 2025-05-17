@@ -262,7 +262,7 @@ Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI t
         if (tumorLine.ROI.geometry.intersects(liverLine.ROI.geometry)) {
             throw new LocalRuntimeException('Liver line is intersecting tumor line')
         }
-        midline = createMidlineStringV3(liverLine.ROI.geometry, tumorLine.ROI.geometry, capsule.geometry)
+        midline = createMidlineStringV4(liverLine.ROI.geometry, tumorLine.ROI.geometry, capsule.geometry)
         if (midline == null || midline.intersects(tumorLine.ROI.geometry) || midline.intersects(liverLine.ROI.geometry)) {
             throw new LocalRuntimeException('Could not find a non-intersecting midline for the capsule')
         }
@@ -300,7 +300,7 @@ def addDebugAnnotations(PathObject tumorLine, PathObject liverLine, Geometry mid
     addObjects(debugAnnotations)
 }
 
-Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleGeometry) {
+Geometry createMidlineStringV4(Geometry line1, Geometry line2, Geometry capsuleGeometry) {
     if (!(line1 instanceof LineString)) {
         throw new IllegalArgumentException("line1 must be a LineString")
     }
