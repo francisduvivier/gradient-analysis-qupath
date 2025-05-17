@@ -1,5 +1,6 @@
 //file:noinspection GrMethodMayBeStatic
 //file:noinspection GroovyUnusedAssignment
+//file:noinspection GrDeprecatedAPIUsage
 
 import groovy.transform.ImmutableOptions
 import org.locationtech.jts.geom.Coordinate
@@ -8,14 +9,12 @@ import org.locationtech.jts.geom.GeometryFactory
 import org.locationtech.jts.geom.LineString
 import org.locationtech.jts.geom.Point
 import org.locationtech.jts.linearref.LengthIndexedLine
-import qupath.lib.common.ColorTools
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
 import qupath.lib.regions.ImagePlane
 import qupath.lib.roi.interfaces.ROI
 import qupath.lib.roi.GeometryTools
 
-import static qupath.lib.scripting.QP.addObject
 import static qupath.lib.scripting.QP.addObjects
 import static qupath.lib.scripting.QP.getAnnotationObjects
 import static qupath.lib.scripting.QP.getCurrentImageData
@@ -49,12 +48,6 @@ def main() {
     }
 
 }
-
-def DEBUG_MODE() { return false }
-
-def DEBUG_MODE_CAPSULE_DIRECTIONS() { return false }
-
-def VISUALIZE_PATH_FINDING() { return true }
 
 def createGradientAnnotations(TissueWithLines tissueAndLines, int coreIndex, List<Integer> liverBands, List<Integer> tumorBands) {
     List<PathObject> tissueAnnotations = []
@@ -213,7 +206,7 @@ def ALLOW_NO_CALIBRATION() { return false }
 double getDistance(double microns) {
     def imageData = getCurrentImageData()
     def server = imageData.getServer()
-// We need the pixel size
+    // We need the pixel size
     def cal = server.getPixelCalibration()
     if (!cal.hasPixelSizeMicrons()) {
 
@@ -267,7 +260,7 @@ Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI t
         if (tumorLine.ROI.geometry.intersects(liverLine.ROI.geometry)) {
             throw new LocalRuntimeException('Liver line is intersecting tumor line')
         }
-        midline = createMidlineStringV4(liverLine.ROI.geometry, tumorLine.ROI.geometry, capsule.geometry)
+        midline = createMidlineStringV4(liverLine.ROI.geometry as LineString, tumorLine.ROI.geometry as LineString, capsule.geometry)
         if (midline == null || midline.intersects(tumorLine.ROI.geometry) || midline.intersects(liverLine.ROI.geometry)) {
             throw new LocalRuntimeException('Could not find a non-intersecting midline for the capsule')
         }
@@ -305,7 +298,7 @@ def addDebugAnnotations(PathObject tumorLine, PathObject liverLine, Geometry mid
     addObjects(debugAnnotations)
 }
 
-Geometry createMidlineStringV4(Geometry line1, Geometry line2, Geometry capsuleGeometry) {
+Geometry createMidlineStringV4(LineString line1, LineString line2, Geometry capsuleGeometry) {
     if (!(line1 instanceof LineString)) {
         throw new IllegalArgumentException("line1 must be a LineString")
     }
@@ -350,14 +343,12 @@ List<Point> calcMidline(LineString line1, LineString line2, Geometry capsule) {
     def line1Offset = 0
     def line2Offset = 0
     while (true) {
-        i += 1
         if (i > MAX_POINTS) {
             print('START_STEP_SIZE: ' + stepSize)
             print('MAX_START_POINTS: ' + MAX_POINTS)
             return points
-//            throw new LocalRuntimeException('Looks like the line endpoints are too weird. Please make them cleaner.')
         }
-
+        i += 1
         def locationInLine1 = stepSize * i + line1Offset
         def p1 = liLine1.extractPoint(locationInLine1)
 
@@ -379,86 +370,6 @@ List<Point> calcMidline(LineString line1, LineString line2, Geometry capsule) {
     return points
 }
 
-double calculateAngleDegrees(double opposite, double adjacent) {
-    double radians = Math.atan(opposite / adjacent)
-    return Math.toDegrees(radians)
-}
-
-Coordinate findNewMidPoint(Coordinate prev, Coordinate newPoint, LineString line1, LineString line2, GeometryFactory geomFactory, ArrayList<PathObject> annotations, int i) {
-    def crossLineLength = line1.length
-    double newXDiff = newPoint.getX() - prev.getX()
-    double newYDiff = newPoint.getY() - prev.getY()
-    if (newXDiff.isInfinite() || newYDiff.isInfinite() || newXDiff.isNaN() || newYDiff.isNaN()) {
-        print('newPoint.getY()' + newPoint.getY() + ', i' + i)
-        print('prev.getY()' + prev.getY() + ', i' + i)
-        print('new newYDiff:' + newYDiff)
-        throw new RuntimeException('Bad distances')
-    }
-    try {
-        def prevAngle = (int) calculateAngleDegrees(-newYDiff, newXDiff)
-        def betterPoint = findBestNewPoint(newPoint, crossLineLength, prevAngle, geomFactory, line1, line2, i)
-//        annotations << getAnnotation(toRoi(geomFactory.createPoint(p1)), "00_debug_p1_" + i, makeRGB(255, 50, 50))
-//        annotations << getAnnotation(toRoi(geomFactory.createPoint(p2)), "00_debug_p2_" + i, makeRGB(255, 50, 50))
-        return betterPoint
-    } catch (LocalRuntimeException e) {
-        print('ERROR: error while trying to find new midpoint')
-        print('ERROR: ' + e.message)
-        if (DEBUG_MODE()) {
-            throw e
-        }
-        print('WARN: ignoring error above')
-    }
-}
-
-Coordinate findBestNewPoint(Coordinate newPoint, double orthLength, int prevAngle, GeometryFactory geomFactory, LineString line1, LineString line2, int i) {
-    def minCrossLength = orthLength
-    Tuple<Coordinate> bestPoints = [null, null]
-    def ANGLE_STEP_SIZE = 20
-    def MAX_ANGLE_DIFF = 100
-    List<PathObject> debugAnnotations = []
-    for (int dir = -1; dir <= 1; dir += 2) {
-        for (int angleDiff = 0; angleDiff <= MAX_ANGLE_DIFF; angleDiff += ANGLE_STEP_SIZE) {
-            angle = prevAngle + angleDiff * dir
-            def xDir = Math.sin(angle * 2f * Math.PI / 360f)
-            def yDir = Math.cos(angle * 2f * Math.PI / 360f)
-            def firstOrthStart = new Coordinate(newPoint.x - xDir * orthLength, newPoint.y - yDir * orthLength)
-            def firstOrthEnd = new Coordinate(newPoint.x + xDir * orthLength, newPoint.y + yDir * orthLength)
-
-            LineString orthogonalLine = geomFactory.createLineString([firstOrthStart, firstOrthEnd] as Coordinate[])
-            if (DEBUG_MODE_CAPSULE_DIRECTIONS()) debugAnnotations << getAnnotation(toRoi(orthogonalLine), "00_debug_direction_i${i}_a$angle", ColorTools.makeRGBA(20, 20, 20, 75))
-
-            def p1 = selectClosestPoint(line1.intersection(orthogonalLine), newPoint)
-            def p2 = selectClosestPoint(line2.intersection(orthogonalLine), newPoint)
-            if (p1 != null && p2 != null) {
-                def p1Dist = Math.abs(p1.distance(newPoint))
-                def p2Dist = Math.abs(p2.distance(newPoint))
-                def crossLength = p1Dist + p2Dist
-                if (crossLength < minCrossLength) {
-                    minCrossLength = crossLength
-                    bestPoints = [p1, p2]
-                }
-            }
-        }
-    }
-    if (DEBUG_MODE()) addObjects(debugAnnotations)
-    def (p1, p2) = bestPoints
-    if (p1 == null || p2 == null) {
-        // This is the case of orthogonal line on the edges that is not intersecting one of the 2 lines, this is normal
-        print("SKIPPING point $i, no intersection found p1 [$p1] p2 [$p2]")
-        return null
-    } else {
-        LineString crossLine = geomFactory.createLineString([p1, p2] as Coordinate[])
-//            annotations << getAnnotation(toRoi(crossLine), "00_debug_cross_" + i, ColorTools.makeRGBA(20, 20, 20, 75))
-        if (DEBUG_MODE()) {
-            addObject(getAnnotation(toRoi(crossLine), "00_debug_cross_" + i, ColorTools.makeRGBA(20, 60, 20, 75)))
-        }   // Calculate the midpoint
-        def newMidPoint = crossLine.centroid
-//        annotations << getAnnotation(toRoi(newMidPoint), "00_debug_newMid" + i, makeRGB(255, 50, 50))
-        return newMidPoint.coordinate
-    }
-}
-
-
 Geometry mergeGeometries(List<Geometry> geometries) {
     if (geometries.size() == 0) {
         return null
@@ -470,29 +381,7 @@ Geometry mergeGeometries(List<Geometry> geometries) {
     return merged
 }
 
-Coordinate selectClosestPoint(Geometry geometry, Coordinate other) {
-    def closestDist = Double.POSITIVE_INFINITY
-    Coordinate closest = null
-    if (geometry == null) {
-        return null
-    }
-
-    def coordinates = geometry.getCoordinates()
-    for (int i = 0; i < coordinates.length; i++) {
-//        print('loop i ' + i)
-        def option = coordinates[i]
-        def newDist = Math.abs(option.distance(other))
-//        print('loop newDist ' + newDist)
-        if (closestDist > newDist) {
-//            print('loop closestDist ' + newDist)
-            closestDist = newDist
-            closest = option
-        }
-    }
-    return closest
-}
-
-def toRoi(Geometry geometry, imagePlane = getDefaultImagePlane()) {
+ROI toRoi(Geometry geometry, ImagePlane imagePlane = getDefaultImagePlane()) {
     return GeometryTools.geometryToROI(geometry, imagePlane)
 }
 
