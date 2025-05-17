@@ -6,6 +6,7 @@ import org.locationtech.jts.geom.Geometry
 import org.locationtech.jts.geom.GeometryFactory
 import org.locationtech.jts.geom.LineString
 import org.locationtech.jts.linearref.LengthIndexedLine
+import qupath.lib.common.ColorTools
 import qupath.lib.objects.PathObject
 import qupath.lib.objects.PathObjects
 import qupath.lib.roi.interfaces.ROI
@@ -39,6 +40,8 @@ def main() {
     }
 
 }
+
+def DEBUG_MODE() { return false }
 
 def createGradientAnnotations(TissueWithLines tissueAndLines, int coreIndex, List<Integer> liverBands, List<Integer> tumorBands) {
     def (liver, tumor, capsule) = getSeparatedTissueParts(tissueAndLines)
@@ -323,7 +326,7 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
     def refLinePoints = Math.max(line1.numPoints, line2.numPoints)
 
     for (int midLineResolutionPower = 0; midLineResolutionPower <= MAX_POWER; midLineResolutionPower++) {
-        def sampleCount = refLinePoints * (2 ** midLineResolutionPower) / 5
+        def sampleCount = refLinePoints * (2**midLineResolutionPower) / 5
         def partSize = 2 * line1.getLength() / sampleCount
         print('Trying to create a capsule midline with resolution power ' + midLineResolutionPower + ', sampleCount ' + sampleCount)
         def midPoints = [midLineStart]
@@ -333,7 +336,7 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
         for (int i = 0; i <= sampleCount; i++) {
             def prev = midPoints.last
             def newPoint = new Coordinate(prev.getX() + xCoefficient * partSize, prev.getY() + yCoefficient * partSize)
-            annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(newPoint)), "00_debug_point_start_" + i, makeRGB(255, 50, 50))
+            annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(newPoint)), "00_debug_point_start_" + i, ColorTools.makeRGBA(20, 20, 20, 100))
 
             def (newMidPoint) = findNewMidPoint(prev, newPoint, line1, line2, geomFactory, annotations, i, capsuleGeometry)
             def insideToOutsideCapsule = capsuleGeometry.contains(geomFactory.createPoint(prev)) && !capsuleGeometry.contains(geomFactory.createPoint(newMidPoint))
@@ -346,11 +349,11 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
                 print("Coefficients updated to [${xCoefficient}] [${yCoefficient}]")
             }
             midPoints << newMidPoint
-            if(insideToOutsideCapsule){
+            if (insideToOutsideCapsule) {
                 break
             }
         }
-//        addObjects(annotations)
+        if (DEBUG_MODE()) addObjects(annotations)
 //        midPoints << refLineEnd
         if (midPoints.size() >= 2) {
             midLine = geomFactory.createLineString(midPoints as Coordinate[])
@@ -387,7 +390,7 @@ def List<Coordinate> findNewMidPoint(Coordinate prev, Coordinate newPoint, LineS
             // Calculate the midpoint
             def newMidPoint = new Coordinate((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0)
             annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(newMidPoint)), "00_debug_newMid" + i, makeRGB(255, 50, 50))
-            return  [newMidPoint]
+            return [newMidPoint]
         }
     } catch (Exception e) {
         print('WARN: error while trying to find new midpoint ignored')
@@ -401,7 +404,7 @@ def List findFindShortestLine(Coordinate newPoint, double xDirOrthogonal, double
     def firstOrthEnd = new Coordinate(newPoint.x + xDirOrthogonal * orthLength, newPoint.y + yDirOrthogonal * orthLength)
 
     LineString orthogonalLine = geomFactory.createLineString([firstOrthStart, firstOrthEnd] as Coordinate[])
-    annotations << getAnnotation(GeometryTools.geometryToROI(orthogonalLine), "00_debug_orth_" + i, makeRGB(20, 20, 20))
+    annotations << getAnnotation(GeometryTools.geometryToROI(orthogonalLine), "00_debug_orth_" + i, ColorTools.makeRGBA(20, 20, 20, 75))
     def p1 = selectClosestPoint(line1.intersection(orthogonalLine), newPoint)
     def p2 = selectClosestPoint(line2.intersection(orthogonalLine), newPoint)
     annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(p1)), "00_debug_p1_" + i, makeRGB(255, 50, 50))
