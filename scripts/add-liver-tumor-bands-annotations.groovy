@@ -320,7 +320,7 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
     }
     // Then we create a LengthIndexedLine from the reference line
     def midLineStart = new Coordinate((line1StartPoint.x + line2StartPoint.x) / 2.0, (line1StartPoint.y + line2StartPoint.y) / 2.0)
-    def MAX_POWER = 0
+    def MAX_POWER = 1
     Geometry midLine = null
     def annotations = []
     def refLinePoints = Math.max(line1.numPoints, line2.numPoints)
@@ -358,8 +358,13 @@ Geometry createMidlineStringV3(Geometry line1, Geometry line2, Geometry capsuleG
 //        midPoints << refLineEnd
         if (midPoints.size() >= 2) {
             midLine = geomFactory.createLineString(midPoints as Coordinate[])
-            if (!midLine.intersects(line1) && !midLine.intersects(line2) && midLine.intersection(capsuleGeometry).numPoints == 2) {
-                return midLine
+            if (!midLine.intersects(line1) && !midLine.intersects(line2)) {
+                def capsuleCrossings = midLine.intersection(capsuleGeometry.boundary)
+                if (capsuleCrossings.numPoints == 2) {
+                    return midLine
+                } else {
+                    print("WARN midline finished but did not cross capsule in 2 points, but instead ${capsuleCrossings.numPoints}")
+                }
             }
         }
         // If the midline intersects the lines, we need to try again with a higher resolution
