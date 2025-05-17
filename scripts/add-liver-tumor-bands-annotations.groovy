@@ -379,37 +379,54 @@ def List<Coordinate> findNewMidPoint(Coordinate prev, Coordinate newPoint, LineS
     xCoefficient = newXDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
     yCoefficient = newYDiff / (Math.abs(newYDiff) + Math.abs(newXDiff))
     try {
-        def xDirOrthogonal = yCoefficient
-        def yDirOrthogonal = -xCoefficient
-        def (Coordinate p1, Coordinate p2) = findFindShortestLine(newPoint, xDirOrthogonal, orthLength, yDirOrthogonal, geomFactory, annotations, i, line1, line2)
+        def (Coordinate p1, Coordinate p2) = findFindShortestLine(newPoint, orthLength, geomFactory, annotations, i, line1, line2, capsule)
+        annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(p1)), "00_debug_p1_" + i, makeRGB(255, 50, 50))
+        annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(p2)), "00_debug_p2_" + i, makeRGB(255, 50, 50))
         if (p1 == null || p2 == null) {
             // This is the case of orthogonal line on the edges that is not intersecting one of the 2 lines, this is normal
             print("SKIPPING point $i, no intersection found p1 [$p1] p2 [$p2]")
+            return [newPoint]
         } else {
-            skippedPoints = 0
+            LineString crossLine = geomFactory.createLineString([p1, p2] as Coordinate[])
+            annotations << getAnnotation(GeometryTools.geometryToROI(crossLine), "00_debug_cross_" + i, ColorTools.makeRGBA(20, 20, 20, 75))
             // Calculate the midpoint
-            def newMidPoint = new Coordinate((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0)
-            annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(newMidPoint)), "00_debug_newMid" + i, makeRGB(255, 50, 50))
-            return [newMidPoint]
+            def newMidPoint = crossLine.centroid
+            annotations << getAnnotation(GeometryTools.geometryToROI(newMidPoint), "00_debug_newMid" + i, makeRGB(255, 50, 50))
+            return [crossLine.centroid.coordinate]
         }
-    } catch (Exception e) {
-        print('WARN: error while trying to find new midpoint ignored')
-        print('WARN: ' + e.message)
+    } catch (LocalRuntimeException e) {
+        print('ERROR: error while trying to find new midpoint')
+        print('ERROR: ' + e.message)
+        if (DEBUG_MODE()) {
+            throw e
+        }
+        print('WARN: ignoring error above')
+        return [newPoint]
     }
-    return [newPoint]
 }
 
-def List findFindShortestLine(Coordinate newPoint, double xDirOrthogonal, double orthLength, double yDirOrthogonal, GeometryFactory geomFactory, ArrayList<PathObject> annotations, int i, LineString line1, LineString line2) {
-    def firstOrthStart = new Coordinate(newPoint.x - xDirOrthogonal * orthLength, newPoint.y - yDirOrthogonal * orthLength)
-    def firstOrthEnd = new Coordinate(newPoint.x + xDirOrthogonal * orthLength, newPoint.y + yDirOrthogonal * orthLength)
+def List findFindShortestLine(Coordinate newPoint, double orthLength, GeometryFactory geomFactory, ArrayList<PathObject> annotations, int i, LineString line1, LineString line2, Geometry capsule) {
+    def minCrossLength = orthLength
+    Tuple<Coordinate> bestPoints = [null, null]
+    for (int angle = 0; angle < 360; angle++) {
+        def xDir = Math.sin(angle * 2f * Math.PI / 360f)
+        def yDir = Math.cos(angle * 2f * Math.PI / 360f)
+        def firstOrthStart = new Coordinate(newPoint.x - xDir * orthLength, newPoint.y - yDir * orthLength)
+        def firstOrthEnd = new Coordinate(newPoint.x + xDir * orthLength, newPoint.y + yDir * orthLength)
 
-    LineString orthogonalLine = geomFactory.createLineString([firstOrthStart, firstOrthEnd] as Coordinate[])
-    annotations << getAnnotation(GeometryTools.geometryToROI(orthogonalLine), "00_debug_orth_" + i, ColorTools.makeRGBA(20, 20, 20, 75))
-    def p1 = selectClosestPoint(line1.intersection(orthogonalLine), newPoint)
-    def p2 = selectClosestPoint(line2.intersection(orthogonalLine), newPoint)
-    annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(p1)), "00_debug_p1_" + i, makeRGB(255, 50, 50))
-    annotations << getAnnotation(GeometryTools.geometryToROI(geomFactory.createPoint(p2)), "00_debug_p2_" + i, makeRGB(255, 50, 50))
-    return [p1, p2]
+        LineString orthogonalLine = geomFactory.createLineString([firstOrthStart, firstOrthEnd] as Coordinate[])
+//        annotations << getAnnotation(GeometryTools.geometryToROI(orthogonalLine), "00_debug_orth_" + i, ColorTools.makeRGBA(20, 20, 20, 75))
+        def p1 = selectClosestPoint(line1.intersection(orthogonalLine), newPoint)
+        def p2 = selectClosestPoint(line2.intersection(orthogonalLine), newPoint)
+        if (p1 != null && p2 != null) {
+            def crossLength = p1.distance(p2)
+            if (crossLength < minCrossLength) {
+                minCrossLength = crossLength
+                bestPoints = [p1, p2]
+            }
+        }
+    }
+    return bestPoints
 }
 
 
@@ -433,12 +450,12 @@ Coordinate selectClosestPoint(Geometry geometry, Coordinate other) {
 
     def coordinates = geometry.getCoordinates()
     for (int i = 0; i < coordinates.length; i++) {
-        print('loop i ' + i)
+//        print('loop i ' + i)
         def option = coordinates[i]
         def newDist = Math.abs(option.distance(other))
-        print('loop newDist ' + newDist)
+//        print('loop newDist ' + newDist)
         if (closestDist > newDist) {
-            print('loop closestDist ' + newDist)
+//            print('loop closestDist ' + newDist)
             closestDist = newDist
             closest = option
         }
