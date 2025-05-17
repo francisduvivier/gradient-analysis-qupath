@@ -262,7 +262,7 @@ Tuple<ROI> splitCapsuleInHalves(ROI capsule, Collection<PathObject> lines, ROI t
             throw new LocalRuntimeException('Liver line is intersecting tumor line')
         }
         midline = createMidlineStringV4(liverLine.ROI.geometry as LineString, tumorLine.ROI.geometry as LineString, capsule.geometry)
-        if (midline == null || midline.intersects(tumorLine.ROI.geometry) || midline.intersects(liverLine.ROI.geometry)) {
+        if (midline == null) {
             throw new LocalRuntimeException('Could not find a non-intersecting midline for the capsule')
         }
         if (!midline.intersects(capsuleGeometry)) {
@@ -325,19 +325,27 @@ Geometry createMidlineStringV4(LineString line1, LineString line2, Geometry caps
     def linesStartYDiff = line2StartPoint.getY() - line1StartPoint.getY()
     def xCoefficient = linesStartYDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
     def yCoefficient = linesStartXDiff / (Math.abs(linesStartYDiff) + Math.abs(linesStartXDiff))
-    def midLinePoints = calcMidline(line1, line2, capsuleGeometry)
-    def midLineString = lineFromPoints(midLinePoints, geomFactory)
-    return midLineString
+    def MAX_STEP_SIZE_POWER = 3
+    def START_STEP_SIZE_POWER = -1
+    for (int stepSizePower = START_STEP_SIZE_POWER; stepSizePower <= MAX_STEP_SIZE_POWER; stepSizePower++) {
+        def midLinePoints = calcMidline(line1, line2, capsuleGeometry, stepSizePower)
+        def midLineString = lineFromPoints(midLinePoints, geomFactory)
+        if (!midLineString.intersects(line1) && !midLineString.intersects(line2)) {
+            return midLineString
+        }
+    }
+    return null
 }
 
-List<Point> calcMidline(LineString line1, LineString line2, Geometry capsule) {
+List<Point> calcMidline(LineString line1, LineString line2, Geometry capsule, int stepSizePower) {
+
     def liLine1 = new LengthIndexedLine(line1)
     def liLine2 = new LengthIndexedLine(line2)
     def geomFactory = capsule.factory
+    def MAX_POINTS = line1.numPoints * (2**(stepSizePower))
     List<Point> points = []
     points.push(midPoint(line1.getStartPoint(), line2.getStartPoint(), line1.factory))
-    def stepSize = line1.length / line1.numPoints
-    def MAX_POINTS = line1.numPoints
+    def stepSize = line1.length / MAX_POINTS
     int i = 0
     def within = false
     def line1Offset = 0
@@ -357,14 +365,14 @@ List<Point> calcMidline(LineString line1, LineString line2, Geometry capsule) {
         def line1Intersections = crossLine.intersection(line1)
         if (line1Intersections.numPoints > 1) {
             // take point with closest distance to other side
-            def closestP1 = line1Intersections.getCoordinates().sort {it.distance(p2)}.first()
+            def closestP1 = line1Intersections.getCoordinates().sort { it.distance(p2) }.first()
             crossLine = lineFromCoords([closestP1, crossLine.getCoordinateN(1)] as Coordinate[], geomFactory)
         }
         def line2Intersections = crossLine.intersection(line2)
 
         if (line2Intersections.numPoints > 1) {
             // take point with closest distance to other side
-            def closestP2 = line2Intersections.getCoordinates().sort {it.distance(p1)}.first()
+            def closestP2 = line2Intersections.getCoordinates().sort { it.distance(p1) }.first()
             crossLine = lineFromCoords([crossLine.getCoordinateN(0), closestP2] as Coordinate[], geomFactory)
         }
 //        addObject(getAnnotation(toRoi(crossLine), 'line ' + i))
