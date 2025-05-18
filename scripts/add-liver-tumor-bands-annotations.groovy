@@ -63,8 +63,8 @@ def createGradientAnnotations(TissueWithLines tissueAndLines, String annotationP
         tissueAnnotations << getAnnotation(capsule, "${annotationPrefix}capsule_whole", makeRGB(0, 150, 0))
         def (midLine, liverCapsule, tumorCapsule) = splitCapsuleInHalves(capsule, tissueAndLines.lines(), tumor)
         tissueAnnotations << getAnnotation(midLine, "${annotationPrefix}capsule_midline", makeRGB(0, 150, 0))
-        tissueAnnotations << getAnnotation(tumorCapsule, "${annotationPrefix}capsule_tumor", makeRGB(0, 150, 0))
-        tissueAnnotations << getAnnotation(liverCapsule, "${annotationPrefix}capsule_liver", makeRGB(0, 150, 0))
+        tissueAnnotations << getAnnotation(tumorCapsule, "${annotationPrefix}tumor_capsule", makeRGB(0, 150, 0))
+        tissueAnnotations << getAnnotation(liverCapsule, "${annotationPrefix}liver_capsule", makeRGB(0, 150, 0))
     }
     def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${annotationPrefix}tumor", liverWC, tumorWC, liverBands)
     tissueAnnotations.addAll(liverExpansionAnnotations)
