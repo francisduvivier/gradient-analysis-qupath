@@ -39,9 +39,10 @@ def main() {
     cleanupAutoAnnotations()
     List<TissueWithLines> tissuesWithLine = findTissueWithTumorLines()
     Integer coreIndex = 0
+    def singleTissueSlide = tissuesWithLine.size() == 1
     for (TissueWithLines tissueAndLines : tissuesWithLine) {
         try {
-            createGradientAnnotations(tissueAndLines, coreIndex, liverBands, tumorBands)
+            createGradientAnnotations(tissueAndLines, singleTissueSlide ? '' : "${coreIndex}_", liverBands, tumorBands)
         } catch (LocalRuntimeException e) {
             print("ERROR: coreIndex [${coreIndex}] for tissue [${tissueAndLines.tissue().getID()}] failed with error:\n${e.message}")
         }
@@ -50,28 +51,28 @@ def main() {
 
 }
 
-def createGradientAnnotations(TissueWithLines tissueAndLines, int coreIndex, List<Integer> liverBands, List<Integer> tumorBands) {
+def createGradientAnnotations(TissueWithLines tissueAndLines, String annotationPrefix, List<Integer> liverBands, List<Integer> tumorBands) {
     List<PathObject> tissueAnnotations = []
     def (ROI liver, ROI tumor, ROI capsule) = getSeparatedTissueParts(tissueAndLines)
-    tissueAnnotations << getAnnotation(tumor, "${coreIndex}_tumor", makeRGB(150, 150, 0))
-    tissueAnnotations << getAnnotation(liver, "${coreIndex}_liver", makeRGB(150, 150, 0))
+    tissueAnnotations << getAnnotation(tumor, "${annotationPrefix}tumor", makeRGB(150, 150, 0))
+    tissueAnnotations << getAnnotation(liver, "${annotationPrefix}liver", makeRGB(150, 150, 0))
 
     def liverWC = unionROI(liver, capsule)
     def tumorWC = unionROI(tumor, capsule)
     if (capsule != null) {
-        tissueAnnotations << getAnnotation(capsule, "${coreIndex}_capsule_whole", makeRGB(0, 150, 0))
+        tissueAnnotations << getAnnotation(capsule, "${annotationPrefix}capsule_whole", makeRGB(0, 150, 0))
         def (midLine, liverCapsule, tumorCapsule) = splitCapsuleInHalves(capsule, tissueAndLines.lines(), tumor)
-        tissueAnnotations << getAnnotation(midLine, "${coreIndex}_capsule_midline", makeRGB(0, 150, 0))
-        tissueAnnotations << getAnnotation(tumorCapsule, "${coreIndex}_capsule_tumor", makeRGB(0, 150, 0))
-        tissueAnnotations << getAnnotation(liverCapsule, "${coreIndex}_capsule_liver", makeRGB(0, 150, 0))
+        tissueAnnotations << getAnnotation(midLine, "${annotationPrefix}capsule_midline", makeRGB(0, 150, 0))
+        tissueAnnotations << getAnnotation(tumorCapsule, "${annotationPrefix}capsule_tumor", makeRGB(0, 150, 0))
+        tissueAnnotations << getAnnotation(liverCapsule, "${annotationPrefix}capsule_liver", makeRGB(0, 150, 0))
     }
-    def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_tumor", liverWC, tumorWC, liverBands)
+    def (biggestLiverExpansion, liverExpansionAnnotations) = annotateHalfWithExpansions("${annotationPrefix}tumor", liverWC, tumorWC, liverBands)
     tissueAnnotations.addAll(liverExpansionAnnotations)
-    tissueAnnotations << getAnnotation(createCentralROI(tumor, biggestLiverExpansion), "${coreIndex}_tumor_central", makeRGB(0, 150, 0))
+    tissueAnnotations << getAnnotation(createCentralROI(tumor, biggestLiverExpansion), "${annotationPrefix}tumor_central", makeRGB(0, 150, 0))
 
-    def (biggestTumorExpansion, tumorExpansionAnnotations) = annotateHalfWithExpansions("${coreIndex}_liver", tumorWC, liverWC, tumorBands)
+    def (biggestTumorExpansion, tumorExpansionAnnotations) = annotateHalfWithExpansions("${annotationPrefix}liver", tumorWC, liverWC, tumorBands)
     tissueAnnotations.addAll(tumorExpansionAnnotations)
-    tissueAnnotations << getAnnotation(createCentralROI(liver, biggestTumorExpansion), "${coreIndex}_liver_central", makeRGB(0, 150, 0))
+    tissueAnnotations << getAnnotation(createCentralROI(liver, biggestTumorExpansion), "${annotationPrefix}liver_central", makeRGB(0, 150, 0))
     addObjects(tissueAnnotations.findAll { it.ROI.isLine() || it.ROI.getArea() > 0 })
 }
 
